@@ -1,0 +1,9 @@
+pandas
+tabulate
+openai
+python-dotenv
+tqdm
+jupyter
+ipykernel
+pillow
+requests
