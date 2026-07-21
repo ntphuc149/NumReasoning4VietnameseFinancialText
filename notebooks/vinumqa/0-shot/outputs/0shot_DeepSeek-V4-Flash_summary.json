@@ -1,0 +1,7 @@
+{
+  "model": "DeepSeek-V4-Flash",
+  "shot": "0-shot",
+  "max_tokens": 8192,
+  "program_accuracy": 2796780684104628,
+  "execution_accuracy": 0.448692152917505
+}
