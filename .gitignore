@@ -2,3 +2,7 @@
 /notebooks/vinumqa/0-shot/outputs
 /notebooks/vinumqa/1-shot/outputs
 /notebooks/vinumqa/few-shot/outputs
+/notebooks/vinumqa/distill-reasoning-trace/conr-v1
+/notebooks/vinumqa/distill-reasoning-trace/conr_trace_full_train.json
+/notebooks/vinumqa/distill-reasoning-trace/conr_trace_full_valid.json
+/notebooks/vinumqa/distill-reasoning-trace/conr_trace_sft_ready.json
