@@ -12,6 +12,8 @@ transparent, verifiable reasoning path.
 
 ## Task definition
 
+![Task formulation](img/task-formulation.png)
+
 - **Input**: `pre_text` (paragraphs before a table), `table`, `post_text`
   (paragraphs after), and a Vietnamese `question`.
 - **Output**: a `program` string using 10 operators —
