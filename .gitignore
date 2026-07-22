@@ -1,1 +1,4 @@
 .env
+/notebooks/vinumqa/0-shot/outputs
+/notebooks/vinumqa/1-shot/outputs
+/notebooks/vinumqa/few-shot/outputs
