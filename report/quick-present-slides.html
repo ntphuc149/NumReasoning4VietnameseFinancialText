@@ -1,0 +1,689 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>
+      Quick Progress Presentation — Vietnamese Financial Numerical Reasoning
+    </title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/white.css"
+      id="theme"
+    />
+    <style>
+      :root {
+        --accent: #1f5fb8;
+        --accent-dark: #123a73;
+        --good: #1e8e3e;
+        --bad: #c5221f;
+        --muted: #5f6368;
+      }
+      .reveal {
+        font-family: "Segoe UI", Helvetica, Arial, sans-serif;
+      }
+      .reveal h1,
+      .reveal h2,
+      .reveal h3 {
+        color: var(--accent-dark);
+        font-weight: 700;
+        letter-spacing: -0.02em;
+      }
+      .reveal h1 {
+        font-size: 1.9em;
+      }
+      .reveal h2 {
+        font-size: 1.4em;
+        text-transform: none;
+      }
+      .reveal section {
+        text-align: left;
+      }
+      .reveal .title-slide {
+        text-align: center;
+      }
+      .reveal .title-slide h1 {
+        font-size: 2em;
+        margin-bottom: 0.2em;
+      }
+      .reveal .subtitle {
+        color: var(--muted);
+        font-size: 0.85em;
+        margin-top: 0.5em;
+      }
+      .reveal .meta {
+        color: var(--muted);
+        font-size: 0.6em;
+        margin-top: 2em;
+      }
+      .reveal ul {
+        margin-left: 0.4em;
+      }
+      .reveal li {
+        margin-bottom: 0.45em;
+      }
+      /* Fixed content bounding box: every content slide places its body inside
+     .content-box so text size/position stays consistent slide to slide and
+     is easy to tweak in one place later (font-size, width, height below). */
+      .reveal section.content .content-box {
+        font-size: 0.5em;
+        width: 900px;
+        max-width: 100%;
+        height: 480px;
+        margin: 0 auto;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+      }
+      .img-col {
+        text-align: center;
+        margin: 0.1em 0;
+      }
+      .img-col img {
+        max-width: 100%;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+      }
+      .img-col .caption {
+        font-size: 0.55em;
+        color: var(--muted);
+        margin-top: 0.5em;
+      }
+      .badge {
+        display: inline-block;
+        padding: 2px 10px;
+        border-radius: 12px;
+        font-size: 0.6em;
+        font-weight: 600;
+        vertical-align: middle;
+      }
+      .badge-good {
+        background: #e6f4ea;
+        color: var(--good);
+      }
+      .badge-bad {
+        background: #fce8e6;
+        color: var(--bad);
+      }
+      .badge-neutral {
+        background: #f1f3f4;
+        color: var(--muted);
+      }
+      .callout {
+        border-left: 4px solid var(--accent);
+        background: #f3f8ff;
+        padding: 0.6em 1em;
+        border-radius: 4px;
+        margin: 0.6em 0;
+        font-size: 0.8em;
+      }
+      .callout.warn {
+        border-left-color: var(--bad);
+        background: #fdf1f0;
+      }
+      .callout.next {
+        border-left-color: var(--good);
+        background: #effaf1;
+      }
+      .step-list {
+        counter-reset: step;
+        list-style: none;
+        margin-left: 0;
+      }
+      .step-list li {
+        counter-increment: step;
+        position: relative;
+        padding-left: 2.2em;
+      }
+      .step-list li::before {
+        content: counter(step);
+        position: absolute;
+        left: 0;
+        top: 0;
+        background: var(--accent);
+        color: white;
+        width: 1.5em;
+        height: 1.5em;
+        border-radius: 50%;
+        text-align: center;
+        line-height: 1.5em;
+        font-size: 0.75em;
+        font-weight: 700;
+      }
+      .small {
+        font-size: 0.68em;
+        color: var(--muted);
+      }
+      .metric-row {
+        display: flex;
+        gap: 1.2em;
+        justify-content: center;
+        margin-top: 1em;
+      }
+      .metric-card {
+        background: #f8f9fb;
+        border-radius: 10px;
+        padding: 0.7em 1.2em;
+        text-align: center;
+        min-width: 140px;
+      }
+      .metric-card .big {
+        font-size: 1.6em;
+        font-weight: 800;
+        color: var(--accent-dark);
+      }
+      .metric-card .big.good {
+        color: var(--good);
+      }
+      .metric-card .label {
+        font-size: 0.55em;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .expander-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.45em;
+        margin-top: 0.6em;
+      }
+      .expander {
+        border: 1px solid #dfe3e8;
+        border-radius: 8px;
+        background: #f8f9fb;
+        overflow: hidden;
+      }
+      .expander[open] {
+        background: white;
+        border-color: var(--accent);
+        box-shadow: 0 2px 10px rgba(31, 95, 184, 0.12);
+      }
+      .expander summary {
+        list-style: none;
+        cursor: pointer;
+        padding: 0.55em 0.8em;
+        display: flex;
+        align-items: center;
+        gap: 0.6em;
+        font-size: 0.68em;
+      }
+      .expander summary::-webkit-details-marker {
+        display: none;
+      }
+      .expander summary::before {
+        content: "\25b8";
+        display: inline-block;
+        color: var(--accent);
+        font-size: 1.1em;
+        width: 0.7em;
+        transition: transform 0.15s;
+        flex-shrink: 0;
+      }
+      .expander[open] summary::before {
+        transform: rotate(90deg);
+      }
+      .expander .step-num {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.7em;
+        height: 1.7em;
+        border-radius: 50%;
+        background: var(--accent);
+        color: white;
+        font-weight: 700;
+        font-size: 0.85em;
+        flex-shrink: 0;
+      }
+      .expander.planned .step-num {
+        background: white;
+        color: var(--accent);
+        border: 1.5px dashed var(--accent);
+      }
+      .expander .stage-name {
+        font-weight: 700;
+        color: var(--accent-dark);
+      }
+      .expander .planned-badge {
+        margin-left: auto;
+        flex-shrink: 0;
+      }
+      .expander .expander-body {
+        padding: 0 0.8em 0.7em 2.9em;
+        font-size: 0.6em;
+        line-height: 1.5;
+        color: #333;
+      }
+      .expander .expander-body strong {
+        color: var(--accent-dark);
+      }
+      .three-col {
+        display: flex;
+        gap: 1.2em;
+        margin-top: 0.8em;
+      }
+      .three-col > div {
+        flex: 1;
+        background: #f8f9fb;
+        border-radius: 8px;
+        padding: 0.7em 0.9em;
+      }
+      .three-col h4 {
+        margin: 0 0 0.3em 0;
+        font-size: 0.75em;
+        color: var(--accent-dark);
+      }
+      .three-col p,
+      .three-col ul {
+        font-size: 0.62em;
+        margin: 0;
+      }
+      .stats-table {
+        width: auto;
+        margin: 0.6em auto 0;
+        border-collapse: collapse;
+        font-size: 0.85em;
+      }
+      .stats-table caption {
+        caption-side: top;
+        text-align: center;
+        font-size: 0.7em;
+        color: var(--muted);
+        margin-bottom: 0.3em;
+        font-style: italic;
+      }
+      .stats-table th,
+      .stats-table td {
+        padding: 0.4em 1em;
+        text-align: center;
+      }
+      .stats-table th {
+        background: var(--accent);
+        color: white;
+        font-weight: 600;
+      }
+      .stats-table td:first-child,
+      .stats-table th:first-child {
+        text-align: left;
+      }
+      .stats-table tbody tr:nth-child(even) td {
+        background: #f8f9fb;
+      }
+      .stats-table tbody tr:last-child td {
+        border-bottom: 1.5px solid #333;
+      }
+      .footnotes {
+        margin-top: 0.7em;
+        padding-top: 0.4em;
+        border-top: 1px solid #e0e0e0;
+      }
+      .footnotes p {
+        font-size: 0.55em;
+        color: var(--muted);
+        margin: 0.15em 0;
+      }
+      .footnotes .rank {
+        color: var(--accent);
+        font-weight: 600;
+      }
+      .two-col {
+        display: flex;
+        gap: 1.2em;
+      }
+      .two-col > div {
+        flex: 1;
+        min-width: 0;
+      }
+      .sample-schema {
+        background: #f3f8ff;
+        border: 1px solid #dfe3e8;
+        border-radius: 8px;
+        padding: 0.6em 0.8em;
+        font-size: 0.44em;
+        line-height: 1.35;
+        overflow: auto;
+        white-space: pre-wrap;
+        max-height: 420px;
+      }
+      .sample-schema code {
+        font-family: "Cascadia Code", Consolas, monospace;
+        color: var(--accent-dark);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="reveal">
+      <div class="slides">
+        <!-- 1. Title -->
+        <section class="title-slide">
+          <h1>Numerical Reasoning over<br />Vietnamese Financial Text</h1>
+          <div class="subtitle">
+            Members: Nguyễn Trường Phúc, Phạm Thị Linh Chi, Lê Dương Hiếu
+          </div>
+          <div class="meta">27/07/2026</div>
+        </section>
+
+        <!-- 2. Task Definition -->
+        <section class="content">
+          <h2>Task Definition</h2>
+          <div class="content-box">
+            <p style="margin-bottom: 0.1em">
+              <strong>Task</strong>: numerical reasoning QA over Vietnamese
+              financial documents (text + table) — generate an
+              <strong>executable computation program</strong>, not just the
+              final number, so every prediction is auditable.
+            </p>
+            <div class="img-col">
+              <img
+                src="../img/task-formulation.png"
+                alt="Task formulation diagram"
+              />
+            </div>
+            <p>
+              The <strong>program</strong> — not just the final number — is the
+              model's output: a transparent, verifiable reasoning path built
+              from a fixed set of arithmetic and table operators.
+            </p>
+          </div>
+        </section>
+
+        <!-- 2b. Sample Preview -->
+        <section class="content">
+          <h2>Sample Preview</h2>
+          <div class="content-box">
+            <p class="small" style="margin: 0 0 0.3em; font-weight: 700">
+              Example — full schema
+            </p>
+            <pre class="sample-schema"><code>{
+        "pre_text": [
+            "thuyết minh báo cáo tài chính hợp nhất hợp đồng tín dụng quy định rằng các khoản vay sẽ chịu ...",
+            "ngoài ra, hợp đồng tín dụng có một khoản phí cam kết trên số tiền cam kết chưa sử dụng theo h...",
+            "lãi suất áp dụng và phí cam kết sẽ thay đổi tùy thuộc vào xếp hạng do standard & poor's finan...",
+            "hợp đồng tín dụng chứa các giao ước hạn chế thông thường và theo thông lệ cho các cơ sở thuộc...",
+            "hợp đồng tín dụng cũng yêu cầu công ty duy trì tỷ lệ tổng nợ trên tổng vốn hóa, như được định...",
+            "hợp đồng tín dụng chứa các trường hợp vi phạm thông thường cho phép các bên cho vay đẩy nhanh...",
+            "không có số tiền nào còn nợ theo hợp đồng tín dụng tại ngày 31 tháng 12, vào ngày 12 tháng 11...",
+            "các trái phiếu này được phát hành theo một khế ước ngày 18 tháng 3 năm 2008 (“khế ước gốc”) g...",
+            "công ty có thể phát hành thêm nợ theo thời gian theo khế ước gốc.",
+            "khế ước điều chỉnh các trái phiếu này chứa các giao ước giới hạn khả năng của công ty, trong ...",
+            "các điều khoản của các trái phiếu này cũng yêu cầu công ty đưa ra đề nghị mua lại trái phiếu ...",
+            "tiền thu được từ đợt chào bán trái phiếu này là 983 triệu đô la (sau khi trừ chiết khấu và ch...",
+            "chiết khấu và chi phí phát hành liên quan đến các trái phiếu này, tổng cộng là 17 triệu đô la...",
+            "các hoạt động ngoài hoa kỳ của ppg có các hạn mức tín dụng không cam kết tổng cộng 791 triệu ...",
+            "nợ ngắn hạn còn lại tại ngày 31 tháng 12 năm 2010 và 2009, như sau: (triệu) 2010 2009 hạn mức...",
+            "các hợp đồng tín dụng quay vòng của công ty bao gồm một giao ước về tỷ lệ tài chính.",
+            "giao ước yêu cầu tổng số nợ không vượt quá 60% ( 60 % ) tổng vốn hóa của công ty không bao gồ...",
+            "tại ngày 31 tháng 12 năm 2010, tổng nợ chiếm 45% ( 45 % ) tổng vốn hóa của công ty không bao ...",
+            "ngoài ra, về cơ bản tất cả các hợp đồng nợ của công ty đều chứa các điều khoản vi phạm chéo t...",
+            "các điều khoản đó thường quy định rằng việc không thanh toán một khoản dịch vụ nợ từ 10 triệu...",
+            "không có nghĩa vụ nợ chính nào của công ty được bảo đảm hoặc bảo lãnh bởi các công ty liên kế...",
+            "các khoản thanh toán lãi trong năm 2010, 2009 và 2008 lần lượt là 189 triệu đô la, 201 triệu ...",
+            "báo cáo thường niên và mẫu 10-k của ppg năm 2010 43."
+        ],
+        "table": [
+            [
+                "( triệu )",
+                "2010",
+                "2009"
+            ],
+            [
+                "Hạn mức tín dụng quay vòng 650 triệu € 0.8% ( 0.8 % ) tại ngày 31 tháng 12 năm 2009",
+                "$ —",
+                "$ 110"
+            ],
+            [
+                "khác, bình quân gia quyền 3.39% ( 3.39 % ) tại ngày 31 tháng 12 năm 2010 và 2.2% ( 2.2 %...",
+                "24",
+                "158"
+            ],
+            [
+                "tổng cộng",
+                "$ 24",
+                "$ 268"
+            ]
+        ],
+        "post_text": [
+            "thuyết minh báo cáo tài chính hợp nhất hợp đồng tín dụng quy định rằng các khoản vay sẽ chịu...",
+            "ngoài ra, hợp đồng tín dụng có một khoản phí cam kết trên số tiền cam kết chưa sử dụng theo ...",
+            "lãi suất áp dụng và phí cam kết sẽ thay đổi tùy thuộc vào xếp hạng do standard & poor's fina...",
+            "hợp đồng tín dụng chứa các giao ước hạn chế thông thường và theo thông lệ cho các cơ sở thuộ...",
+            "hợp đồng tín dụng cũng yêu cầu công ty duy trì tỷ lệ tổng nợ trên tổng vốn hóa, như được địn...",
+            "hợp đồng tín dụng chứa các trường hợp vi phạm thông thường cho phép các bên cho vay đẩy nhan...",
+            "không có số tiền nào còn nợ theo hợp đồng tín dụng tại ngày 31 tháng 12, vào ngày 12 tháng 1...",
+            "các trái phiếu này được phát hành theo một khế ước ngày 18 tháng 3 năm 2008 (“khế ước gốc”) ...",
+            "công ty có thể phát hành thêm nợ theo thời gian theo khế ước gốc.",
+            "khế ước điều chỉnh các trái phiếu này chứa các giao ước giới hạn khả năng của công ty, trong...",
+            "các điều khoản của các trái phiếu này cũng yêu cầu công ty đưa ra đề nghị mua lại trái phiếu...",
+            "tiền thu được từ đợt chào bán trái phiếu này là 983 triệu đô la (sau khi trừ chiết khấu và c...",
+            "chiết khấu và chi phí phát hành liên quan đến các trái phiếu này, tổng cộng là 17 triệu đô l...",
+            "các hoạt động ngoài hoa kỳ của ppg có các hạn mức tín dụng không cam kết tổng cộng 791 triệu...",
+            "nợ ngắn hạn còn lại tại ngày 31 tháng 12 năm 2010 và 2009, như sau: (triệu) 2010 2009 hạn mứ...",
+            "các hợp đồng tín dụng quay vòng của công ty bao gồm một giao ước về tỷ lệ tài chính.",
+            "giao ước yêu cầu tổng số nợ không vượt quá 60% ( 60 % ) tổng vốn hóa của công ty không bao g...",
+            "tại ngày 31 tháng 12 năm 2010, tổng nợ chiếm 45% ( 45 % ) tổng vốn hóa của công ty không bao...",
+            "ngoài ra, về cơ bản tất cả các hợp đồng nợ của công ty đều chứa các điều khoản vi phạm chéo ...",
+            "các điều khoản đó thường quy định rằng việc không thanh toán một khoản dịch vụ nợ từ 10 triệ...",
+            "không có nghĩa vụ nợ chính nào của công ty được bảo đảm hoặc bảo lãnh bởi các công ty liên k...",
+            "các khoản thanh toán lãi trong năm 2010, 2009 và 2008 lần lượt là 189 triệu đô la, 201 triệu...",
+            "báo cáo thường niên và mẫu 10-k của ppg năm 2010 43."
+        ],
+        "id": "PPG/2010/page_45.pdf-2",
+        "qa": {
+            "question": "Khoản thanh toán lãi năm 2011 sẽ là bao nhiêu dựa trên tỷ lệ thay đổi từ năm 200...",
+            "program": "divide(189, 201), multiply(189, #0)",
+            "exe_ans": "177.71642"
+        }
+    }</code></pre>
+          </div>
+        </section>
+
+        <!-- 2c. Datasets & Metrics -->
+        <section class="content">
+          <h2>Datasets &amp; Metrics</h2>
+          <div class="content-box">
+            <ul>
+              <li>
+                <strong>FinQA</strong> (Chen et al., 2021) — English financial
+                reports, text + table → program
+              </li>
+              <li>
+                <strong>ViNumQA</strong> (Toan et al. 2025) — Vietnamese
+                financial reports, same task format
+              </li>
+            </ul>
+            <table class="stats-table">
+              <caption>
+                Table 1: Train / valid / test split sizes for FinQA and ViNumQA
+              </caption>
+              <thead>
+                <tr>
+                  <th>Dataset</th>
+                  <th>Train</th>
+                  <th>Valid</th>
+                  <th>Test</th>
+                  <th>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>FinQA</td>
+                  <td>6,251</td>
+                  <td>883</td>
+                  <td>1,147</td>
+                  <td>8,281</td>
+                </tr>
+                <tr>
+                  <td>ViNumQA</td>
+                  <td>2,993</td>
+                  <td>584</td>
+                  <td>497</td>
+                  <td>4,074</td>
+                </tr>
+              </tbody>
+            </table>
+            <p style="margin-top: 0.7em; margin-bottom: 0.2em">
+              <strong>Metrics</strong>:
+            </p>
+            <ol style="margin: 0 0 0 1.2em; padding: 0">
+              <li>
+                <strong>Program Accuracy (PA)</strong>
+                <span class="badge badge-good">primary metric</span> — exact
+                structural match to the gold program. Prioritized because it
+                shows <strong>transparency</strong>: a numerically correct
+                answer from a logically wrong program is considered
+                <strong>meaningless</strong> in this domain.
+              </li>
+              <li>
+                <strong>Execution Accuracy (EA)</strong>
+                <span class="badge badge-neutral">reference only</span> —
+                executing the program yields the correct answer
+              </li>
+            </ol>
+            <div class="footnotes">
+              <p>
+                FinQA: A Dataset of Numerical Reasoning over Financial Data
+                (Chen et al., EMNLP 2021)
+                <span class="rank">(A* conference)</span>
+              </p>
+              <p>
+                VLSP 2025 challenge: Numerical Reasoning Question and Answer
+                (Toan et al., VLSP 2025)
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <!-- 3. Solution & Tech pipeline -->
+        <section class="content">
+          <h2>Approach &amp; Roadmap</h2>
+          <div class="content-box">
+            <p class="small" style="text-align: center; margin: 0 0 0.2em">
+              A progressively stronger set of approaches on the same held-out
+              set — click a stage to expand.
+            </p>
+            <div class="expander-list">
+              <details class="expander">
+                <summary>
+                  <span class="step-num">1</span>
+                  <span class="stage-name">In-context learning</span>
+                </summary>
+                <div class="expander-body">
+                  <strong>Setup:</strong> 0/1/few-shot prompting<br />
+                  <strong>Models:</strong> Qwen3-4B, Llama-3.3-70B,
+                  DeepSeek-V4-Flash, gpt-5-nano — no fine-tuning, no training
+                  data needed; establishes the zero/low-resource baseline
+                </div>
+              </details>
+              <details class="expander">
+                <summary>
+                  <span class="step-num">2</span>
+                  <span class="stage-name">Reasoning trace distillation</span>
+                </summary>
+                <div class="expander-body">
+                  <strong>Setup:</strong> teacher → student<br />
+                  <strong>Teacher:</strong> Qwen3-Next-80B-A3B-Thinking
+                  rationalizes gold programs into
+                  <code>&lt;think&gt;...&lt;/think&gt;</code> reasoning traces
+                  (CoNR)
+                </div>
+              </details>
+              <details class="expander">
+                <summary>
+                  <span class="step-num">3</span>
+                  <span class="stage-name">Supervised fine-tuning</span>
+                </summary>
+                <div class="expander-body">
+                  <strong>Setup:</strong> QLoRA, w/o &amp; w/ reasoning trace<br />
+                  <strong>Data:</strong> ViNumQA (pre_text + table + question →
+                  program), with and without the distilled reasoning traces<br />
+                  <strong>Model:</strong> Qwen3-4B with PEFT and 4-bit
+                  quantization
+                </div>
+              </details>
+              <details class="expander planned">
+                <summary>
+                  <span class="step-num">4</span>
+                  <span class="stage-name">SFT + RL</span>
+                  <span class="badge badge-neutral planned-badge">planned</span>
+                </summary>
+                <div class="expander-body">
+                  <strong>Setup:</strong> GRPO<br />
+                  <strong>Plan:</strong> reward on program validity + execution
+                  correctness + conciseness, starting from the SFT checkpoint to
+                  push past the SFT ceiling
+                </div>
+              </details>
+              <details class="expander planned">
+                <summary>
+                  <span class="step-num">5</span>
+                  <span class="stage-name">Multi-agent</span>
+                  <span class="badge badge-neutral planned-badge">planned</span>
+                </summary>
+                <div class="expander-body">
+                  <strong>Plan:</strong> planner / executor / verifier roles to
+                  catch gold-label errors and self-correct programs before final
+                  answer
+                </div>
+              </details>
+            </div>
+          </div>
+        </section>
+
+        <!-- 4. Output direction -->
+        <section class="content">
+          <h2>Output Direction</h2>
+          <div class="content-box">
+            <div class="metric-row">
+              <div class="metric-card">
+                <div class="big good">Research</div>
+                <div class="label">Primary direction</div>
+              </div>
+              <div class="metric-card">
+                <div class="big">Fintech</div>
+                <div class="label">Application domain</div>
+              </div>
+            </div>
+            <ul style="margin-top: 1.2em">
+              <li>
+                A <strong>research-style comparison</strong>: prompting vs. SFT
+                vs. reasoning-trace distillation vs. GRPO vs. multi-agent, on a
+                shared-task benchmark — write-up feasible as a short technical
+                report/proposal
+              </li>
+              <li>
+                Applied to the <strong>Vietnamese Fintech domain</strong>: the
+                goal is an <strong>explainable</strong> system that answers
+                numerical questions over Vietnamese financial documents —
+                exposing the reasoning steps behind every answer instead of a
+                black box — so the research findings translate into a usable
+                application
+              </li>
+              <li>
+                Skills built here (NLP fine-tuning, knowledge distillation,
+                RL-based policy optimization) directly support building and
+                improving this system going forward
+              </li>
+            </ul>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.js"></script>
+    <script>
+      Reveal.initialize({
+        hash: true,
+        slideNumber: true,
+        transition: "slide",
+        width: 1100,
+        height: 700,
+        margin: 0.06,
+      });
+    </script>
+  </body>
+</html>
