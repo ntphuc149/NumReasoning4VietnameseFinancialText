@@ -46,3 +46,19 @@ Wrote and refined the prompt for reasoning-trace knowledge distillation from the
 
 Generated reasoning traces from the teacher model using the refined instruction prompt.
 Ran SFT without/with reasoning trace from the teacher model.
+
+## 27/7/2026
+
+Got results for SFT with reasoning-trace distillation (PA 0.6258, EA 0.6338), still below
+SFT without reasoning trace (PA 0.6419, EA 0.6439). Investigated possible causes: repetitive
+generation loops observed at inference, and a hypothesis that the distilled reasoning traces
+being in Vietnamese hurts performance since Qwen3's instruction-tuning is predominantly
+English. To test the language hypothesis cheaply before committing to re-distilling from the
+teacher model, built a notebook to machine-translate the existing Vietnamese reasoning traces
+to English (VietAI/envit5-translation), with sentence-level translation and a number-recovery
+step (splicing original numeric tokens back into the translation, with a regex-based spacing
+cleanup fallback) to avoid corrupting the numbers embedded in each trace. Also tuned inference
+decoding parameters (temperature/top-k/top-p) for the reasoning-trace SFT model to reduce
+repetition. Next: fine-tune Qwen3-4B on the translated (English) reasoning traces and compare
+PA/EA against the Vietnamese-trace run — if it improves, re-distill directly from
+Qwen3-Next-80B-A3B-Thinking with an English-output prompt instead of relying on MT.

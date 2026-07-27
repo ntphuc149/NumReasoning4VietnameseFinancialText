@@ -6,3 +6,4 @@
 /notebooks/vinumqa/distill-reasoning-trace/conr_trace_full_train.json
 /notebooks/vinumqa/distill-reasoning-trace/conr_trace_full_valid.json
 /notebooks/vinumqa/distill-reasoning-trace/conr_trace_sft_ready.json
+/notebooks/vinumqa/sft-grpo/template-sft-grpo-qwen3-4b-base.ipynb
