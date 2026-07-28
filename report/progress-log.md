@@ -62,3 +62,38 @@ decoding parameters (temperature/top-k/top-p) for the reasoning-trace SFT model 
 repetition. Next: fine-tune Qwen3-4B on the translated (English) reasoning traces and compare
 PA/EA against the Vietnamese-trace run — if it improves, re-distill directly from
 Qwen3-Next-80B-A3B-Thinking with an English-output prompt instead of relying on MT.
+
+## 28/7/2026
+
+Found and fixed a scoring bug affecting every notebook: ViNumQA gold programs use
+`table_sum/table_average/table_max/table_min(row_name, none)`, where the first
+argument is a table row *name* to look up — not a list of numeric values, as every
+notebook's SYSTEM_MESSAGE incorrectly described and every hand-rolled evaluator
+assumed. This silently scored EA=0 on any sample using a table_* op (~12% of
+test.json) and, more importantly, meant every 0/1/few-shot prompted model was being
+taught the wrong output format directly in the prompt. Built a shared evaluator
+(`notebooks/evaluate/scorer.py`) porting FinQA's official evaluation protocol (Chen
+et al. 2021) — sympy-based symbolic Program Accuracy, table-row-lookup-aware
+Execution Accuracy — with five corrections justified by measurement against this
+dataset (bracket-depth-aware tokenization for row labels like "ROE (%)", the pure
+"(3344)" accounting-negative form, skipping missing/unparseable table cells instead
+of voiding the whole row, coercing exe_ans to float, dropping a debug assert that
+aborted scoring on rounding disagreements) and a fix for silent truncation (a
+generated program cut off mid-step must score invalid, not be evaluated on whatever
+steps happened to parse). Applied the fix (corrected SYSTEM_MESSAGE, added a
+table_raw column so the evaluator can see the real table, swapped in scorer.py)
+across all 0-shot/1-shot/few-shot notebooks and both SFT notebooks. Added the two
+missing 1-shot notebooks (FPT API and Qwen3-4B/Kaggle) to match the existing
+0-shot/few-shot coverage.
+
+Re-ran two notebooks end-to-end against the fixed evaluator: 0-shot DeepSeek-V4-Flash
+scored PA 14.69% / EA 18.71%; 1-shot gpt-5-nano (medium effort, Batch API) scored
+PA 28.37% / EA 31.39%. Also tuned SFT-without-reasoning-trace eval-time decoding
+(temperature=0.7, top_p=0.8, top_k=20, min_p=0, matching the training generation
+config) and wired the SFT-with-reasoning-trace notebook up to the same shared
+scorer so all methods are now compared on identical scoring logic.
+
+Repo housekeeping: deleted the stale `scorer-fix` branch (superseded, its useful
+content — Chi's independent-solve trace distillation work — was not on this
+branch's history) and reset the `chi`/`ldh` branches to match `main`, since prior
+work on those branches was not meant to be kept as separate history.
