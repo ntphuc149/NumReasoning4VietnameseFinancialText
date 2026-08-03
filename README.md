@@ -146,28 +146,59 @@ supervised imitation. Not yet implemented.
 
 ## Results (test.json, 497 samples)
 
+### In-context learning baselines
+
+| Setting | Model | PA ↑ | EA ↑ |
+|---|---|---|---|
+| 0-shot | Qwen3-4B | 0.0402 | 0.0644 |
+| 0-shot | qwen3-4b-thinking | 0.2093 | 0.2435 |
+| 0-shot | Gemma3-4B | 0.0181 | 0.0463 |
+| 0-shot | gemma-3-27b-it | 0.0905 | 0.1207 |
+| 0-shot | gemma-4-31B-it | 0.4889 | 0.5533 |
+| 0-shot | gpt-oss-20b | 0.2716 | 0.3179 |
+| 0-shot | gpt-oss-120b | 0.3179 | 0.3561 |
+| 0-shot | Llama-3.3-70B-Instruct | 0.1469 | 0.1871 |
+| 0-shot | DeepSeek-V4-Flash | 0.3340 | 0.4326 |
+| 0-shot | GLM-5.2 | 0.4306 | 0.4990 |
+| 0-shot | gpt-5-nano (medium) | 0.2012 | 0.2173 |
+| 1-shot | Qwen3-4B | 0.1690 | 0.1932 |
+| 1-shot | qwen3-4b-thinking | 0.3581 | 0.3964 |
+| 1-shot | Gemma3-4B | 0.1710 | 0.2012 |
+| 1-shot | gemma-3-27b-it | 0.4105 | 0.4406 |
+| 1-shot | gemma-4-31B-it | 0.5312 | 0.5594 |
+| 1-shot | gemma-4-26B-A4B-it | 0.3581 | 0.3823 |
+| 1-shot | gpt-oss-20b | 0.3501 | 0.3964 |
+| 1-shot | gpt-oss-120b | 0.3783 | 0.4125 |
+| 1-shot | Llama-3.3-70B-Instruct | 0.3944 | 0.4245 |
+| 1-shot | DeepSeek-V4-Flash | 0.4346 | 0.4829 |
+| 1-shot | GLM-5.2 | 0.4849 | 0.5171 |
+| 1-shot | gpt-5-nano (medium) | 0.2837 | 0.3139 |
+| few-shot (3) | Qwen3-4B | 0.3763 | 0.4165 |
+| few-shot (3) | qwen3-4b-thinking | 0.3521 | 0.4145 |
+| few-shot (3) | Gemma3-4B | 0.1268 | 0.1429 |
+| few-shot (3) | gemma-3-27b-it | 0.5171 | 0.5895 |
+| few-shot (3) | gemma-4-31B-it | 0.5674 | 0.6137 |
+| few-shot (3) | gpt-oss-20b | 0.3763 | 0.4286 |
+| few-shot (3) | gpt-oss-120b | 0.3863 | 0.4286 |
+| few-shot (3) | Llama-3.3-70B-Instruct | 0.4145 | 0.4547 |
+| few-shot (3) | DeepSeek-V4-Flash | 0.4467 | 0.5050 |
+| few-shot (3) | GLM-5.2 | 0.5091 | 0.5553 |
+| few-shot (3) | gpt-5-nano (medium) | 0.3179 | 0.3581 |
+
+Best in-context result so far: **gemma-4-31B-it, few-shot (3)** — PA 0.5674 / EA 0.6137.
+
+### Fine-tuned
+
 | Method | Model | PA | EA |
 |---|---|---|---|
-| 0-shot | Qwen3-4B | 0.0000 | 0.0644 |
-| 0-shot | Llama-3.3-70B-Instruct | 0.1730 | 0.4085 |
-| 0-shot | DeepSeek-V4-Flash | 0.2797 | 0.4487 |
-| 0-shot | gpt-5-nano (medium effort) | 0.1831 | 0.2958 |
-| 1-shot | Qwen3-4B | 0.1449 | 0.3159 |
-| 1-shot | Llama-3.3-70B-Instruct | 0.2958 | 0.4567 |
-| 1-shot | DeepSeek-V4-Flash | 0.3259 | 0.4989 |
-| 1-shot | gpt-5-nano (medium effort) | 0.3179 | 0.4346 |
-| few-shot (3) | Qwen3-4B | 0.3159 | 0.4487 |
-| few-shot (3) | Llama-3.3-70B-Instruct | 0.3099 | 0.4527 |
-| few-shot (3) | DeepSeek-V4-Flash | 0.3421 | 0.4909 |
-| few-shot (3) | gpt-5-nano (low effort) | 0.3622 | 0.4648 |
 | QLoRA SFT (no reasoning trace) | Qwen3-4B | 0.6419 | 0.6439 |
 | QLoRA SFT (w/ distilled reasoning trace) | Qwen3-4B | *in progress* | *in progress* |
 | SFT + GRPO | Qwen3-4B | *planned* | *planned* |
 
-PA/EA are computed with the same exact-match/tolerance-based scorer used
-across every notebook (`extract_program` → `parse_program` →
-`compute_program_accuracy` / `compute_execution_accuracy`), so all rows are
-directly comparable.
+PA/EA are computed with the shared evaluator in `notebooks/evaluate/scorer.py`
+(sympy-based symbolic Program Accuracy, table-row-lookup-aware Execution
+Accuracy, ported from the official FinQA evaluation protocol), so all rows
+are directly comparable.
 
 ## Running the notebooks
 
