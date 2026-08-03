@@ -1,7 +1,6 @@
 # Progress Log — VSF-Fintech VLSP 2025 Numerical Reasoning
 
-Daily work log for the Numerical Reasoning QA project on Vietnamese financial
-text (VLSP 2025 NumQA shared task).
+Daily work log for the Numerical Reasoning QA project on Vietnamese financial text (VLSP 2025 NumQA shared task).
 
 ---
 
@@ -14,13 +13,13 @@ Explored problem formulations and datasets related to fintech.
 Read the following papers:
 
 1. Zhiwei Liu, Keyi Wang, Zhuo Bao, Xin Zhang, Jiping Dong, Kailai Yang, Mohsinul Kabir, Polydoros Giannouris, Rui Xing, Seongchan Park, Jaehong Kim, Dong Li, Qianqian Xie, and Sophia Ananiadou. 2025. FinNLP-FNP-LLMFinLegal-2025 Shared Task: Financial Misinformation Detection Challenge Task. In Proceedings of the Joint Workshop of the 9th Financial Technology and Natural Language Processing (FinNLP), the 6th Financial Narrative Processing (FNP), and the 1st Workshop on Large Language Models for Finance and Legal (LLMFinLegal), pages 271–276, Abu Dhabi, UAE. Association for Computational Linguistics.
-   *(Workshop co-located with **COLING 2025** — CORE rank **B**, per the CORE 2023 ranking.)*
+   _(Workshop co-located with **COLING 2025** — CORE rank **B**, per the CORE 2023 ranking.)_
 2. Zhiwei Liu, Xin Zhang, Kailai Yang, Qianqian Xie, Jimin Huang, and Sophia Ananiadou. 2025. FMDLlama: Financial Misinformation Detection Based on Large Language Models. In Companion Proceedings of the ACM on Web Conference 2025 (WWW '25). Association for Computing Machinery, New York, NY, USA, 1153–1157. https://doi.org/10.1145/3701716.3715599
-   *(**WWW (The Web Conference)** — CORE rank **A\*** (flagship conference).)*
+   _(**WWW (The Web Conference)** — CORE rank **A\*** (flagship conference).)_
 3. Yuechen Jiang, Zhiwei Liu, Yupeng Cao, Yueru He, Ziyang Xu, Chen Xu, Zhiyang Deng, Prayag Tiwari, Xi Chen, Alejandro Lopez-Lira, Jimin Huang, Junichi Tsujii, and Sophia Ananiadou. 2026. All That Glisters Is Not Gold: A Benchmark for Reference-Free Counterfactual Financial Misinformation Detection. In Proceedings of the 64th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers), pages 10737–10776, San Diego, California, United States. Association for Computational Linguistics.
-   *(**ACL (Annual Meeting)**, main conference — CORE rank **A\*** (flagship conference).)*
+   _(**ACL (Annual Meeting)**, main conference — CORE rank **A\*** (flagship conference).)_
 4. Le Ngoc Toan, Ha My Linh, Pham Thi Duc, Ngo The Quyen, and Nguyen Thi Minh Huyen. 2025. VLSP 2025 challenge: Numerical Reasoning Question and Answer. In Proceedings of the 11th International Workshop on Vietnamese Language and Speech Processing, pages 187–196, Hanoi, Vietnam. Association for Computational Linguistics.
-   *(VLSP is a Vietnamese-specific workshop with no standalone CORE rank — selected because it is the paper that directly describes the NumQA/ViNumQA shared task this project is built on, not for venue prestige.)*
+   _(VLSP is a Vietnamese-specific workshop with no standalone CORE rank — selected because it is the paper that directly describes the NumQA/ViNumQA shared task this project is built on, not for venue prestige.)_
 
 **Why these four papers**: the first three (FinNLP-FNP-LLMFinLegal, WWW, ACL) span a range of venue tiers (B → A\* → A\*) on the related problem of financial misinformation detection, giving coverage of both a specialized workshop and top-tier general venues working on NLP-for-finance; the fourth is the direct source of the task/dataset (ViNumQA) this project builds on.
 
@@ -44,56 +43,38 @@ Wrote and refined the prompt for reasoning-trace knowledge distillation from the
 
 ## 24/7/2026
 
-Generated reasoning traces from the teacher model using the refined instruction prompt.
-Ran SFT without/with reasoning trace from the teacher model.
+Generated reasoning traces from the teacher model using the refined instruction prompt. Ran SFT without/with reasoning trace from the teacher model.
 
 ## 27/7/2026
 
-Got results for SFT with reasoning-trace distillation (PA 0.6258, EA 0.6338), still below
-SFT without reasoning trace (PA 0.6419, EA 0.6439). Investigated possible causes: repetitive
-generation loops observed at inference, and a hypothesis that the distilled reasoning traces
-being in Vietnamese hurts performance since Qwen3's instruction-tuning is predominantly
-English. To test the language hypothesis cheaply before committing to re-distilling from the
-teacher model, built a notebook to machine-translate the existing Vietnamese reasoning traces
-to English (VietAI/envit5-translation), with sentence-level translation and a number-recovery
-step (splicing original numeric tokens back into the translation, with a regex-based spacing
-cleanup fallback) to avoid corrupting the numbers embedded in each trace. Also tuned inference
-decoding parameters (temperature/top-k/top-p) for the reasoning-trace SFT model to reduce
-repetition. Next: fine-tune Qwen3-4B on the translated (English) reasoning traces and compare
-PA/EA against the Vietnamese-trace run — if it improves, re-distill directly from
-Qwen3-Next-80B-A3B-Thinking with an English-output prompt instead of relying on MT.
+Got results for SFT with reasoning-trace distillation (PA 0.6258, EA 0.6338), still below SFT without reasoning trace (PA 0.6419, EA 0.6439). Investigated possible causes: repetitive generation loops observed at inference, and a hypothesis that the distilled reasoning traces being in Vietnamese hurts performance since Qwen3's instruction-tuning is predominantly English. To test the language hypothesis cheaply before committing to re-distilling from the teacher model, built a notebook to machine-translate the existing Vietnamese reasoning traces to English (VietAI/envit5-translation), with sentence-level translation and a number-recovery step (splicing original numeric tokens back into the translation, with a regex-based spacing cleanup fallback) to avoid corrupting the numbers embedded in each trace. Also tuned inference decoding parameters (temperature/top-k/top-p) for the reasoning-trace SFT model to reduce repetition. Next: fine-tune Qwen3-4B on the translated (English) reasoning traces and compare PA/EA against the Vietnamese-trace run — if it improves, re-distill directly from Qwen3-Next-80B-A3B-Thinking with an English-output prompt instead of relying on MT.
 
 ## 28/7/2026
 
-Found and fixed a scoring bug affecting every notebook: ViNumQA gold programs use
-`table_sum/table_average/table_max/table_min(row_name, none)`, where the first
-argument is a table row *name* to look up — not a list of numeric values, as every
-notebook's SYSTEM_MESSAGE incorrectly described and every hand-rolled evaluator
-assumed. This silently scored EA=0 on any sample using a table_* op (~12% of
-test.json) and, more importantly, meant every 0/1/few-shot prompted model was being
-taught the wrong output format directly in the prompt. Built a shared evaluator
-(`notebooks/evaluate/scorer.py`) porting FinQA's official evaluation protocol (Chen
-et al. 2021) — sympy-based symbolic Program Accuracy, table-row-lookup-aware
-Execution Accuracy — with five corrections justified by measurement against this
-dataset (bracket-depth-aware tokenization for row labels like "ROE (%)", the pure
-"(3344)" accounting-negative form, skipping missing/unparseable table cells instead
-of voiding the whole row, coercing exe_ans to float, dropping a debug assert that
-aborted scoring on rounding disagreements) and a fix for silent truncation (a
-generated program cut off mid-step must score invalid, not be evaluated on whatever
-steps happened to parse). Applied the fix (corrected SYSTEM_MESSAGE, added a
-table_raw column so the evaluator can see the real table, swapped in scorer.py)
-across all 0-shot/1-shot/few-shot notebooks and both SFT notebooks. Added the two
-missing 1-shot notebooks (FPT API and Qwen3-4B/Kaggle) to match the existing
-0-shot/few-shot coverage.
+Found and fixed a scoring bug affecting every notebook: ViNumQA gold programs use `table_sum/table_average/table_max/table_min(row_name, none)`, where the first argument is a table row _name_ to look up — not a list of numeric values, as every notebook's SYSTEM*MESSAGE incorrectly described and every hand-rolled evaluator assumed. This silently scored EA=0 on any sample using a table*\* op (~12% of test.json) and, more importantly, meant every 0/1/few-shot prompted model was being taught the wrong output format directly in the prompt. Built a shared evaluator (`notebooks/evaluate/scorer.py`) porting FinQA's official evaluation protocol (Chen et al. 2021) — sympy-based symbolic Program Accuracy, table-row-lookup-aware Execution Accuracy — with five corrections justified by measurement against this dataset (bracket-depth-aware tokenization for row labels like "ROE (%)", the pure "(3344)" accounting-negative form, skipping missing/unparseable table cells instead of voiding the whole row, coercing exe_ans to float, dropping a debug assert that aborted scoring on rounding disagreements) and a fix for silent truncation (a generated program cut off mid-step must score invalid, not be evaluated on whatever steps happened to parse). Applied the fix (corrected SYSTEM_MESSAGE, added a table_raw column so the evaluator can see the real table, swapped in scorer.py) across all 0-shot/1-shot/few-shot notebooks and both SFT notebooks. Added the two missing 1-shot notebooks (FPT API and Qwen3-4B/Kaggle) to match the existing 0-shot/few-shot coverage.
 
-Re-ran two notebooks end-to-end against the fixed evaluator: 0-shot DeepSeek-V4-Flash
-scored PA 14.69% / EA 18.71%; 1-shot gpt-5-nano (medium effort, Batch API) scored
-PA 28.37% / EA 31.39%. Also tuned SFT-without-reasoning-trace eval-time decoding
-(temperature=0.7, top_p=0.8, top_k=20, min_p=0, matching the training generation
-config) and wired the SFT-with-reasoning-trace notebook up to the same shared
-scorer so all methods are now compared on identical scoring logic.
+Re-ran two notebooks end-to-end against the fixed evaluator: 0-shot DeepSeek-V4-Flash scored PA 14.69% / EA 18.71%; 1-shot gpt-5-nano (medium effort, Batch API) scored PA 28.37% / EA 31.39%. Also tuned SFT-without-reasoning-trace eval-time decoding (temperature=0.7, top_p=0.8, top_k=20, min_p=0, matching the training generation config) and wired the SFT-with-reasoning-trace notebook up to the same shared scorer so all methods are now compared on identical scoring logic.
 
-Repo housekeeping: deleted the stale `scorer-fix` branch (superseded, its useful
-content — Chi's independent-solve trace distillation work — was not on this
-branch's history) and reset the `chi`/`ldh` branches to match `main`, since prior
-work on those branches was not meant to be kept as separate history.
+Repo housekeeping: deleted the stale `scorer-fix` branch (superseded, its useful content — Chi's independent-solve trace distillation work — was not on this branch's history) and reset the `chi`/`ldh` branches to match `main`, since prior work on those branches was not meant to be kept as separate history.
+
+## 29/7/2026
+
+Tried switching the SFT-with-reasoning-trace eval loop from sequential HF `model.generate()` to vLLM continuous batching (serving the LoRA adapter directly via `enable_lora`/`LoRARequest`, no merge needed) to speed up inference on Kaggle's T4 GPUs. Hit a chain of T4-specific issues: bf16 unsupported on compute capability 7.5 (switched to float16), then an OOM at engine startup caused by leftover VRAM from the just-finished HF/Unsloth session not being fully released by `del model; gc.collect(); torch.cuda.empty_cache()` in the same process, then confusion around how `gpu_memory_utilization` budgets per-GPU (not shared) once `tensor_parallel_size=2` is used across Kaggle's two T4s. Concluded vLLM isn't worth the fragility for this hardware tier on a one-off eval loop and reverted to the original sequential generation loop.
+
+Reviewed the mentor's Sprint*Template.xlsx (an overview sheet plus one detail sheet per sprint: problem / sub-question / method / result). Compared it against the user's original 3-sprint plan and filled in both the overview and all three detail sheets with what was actually done, including gaps the original plan didn't capture: re-running 0/1/few-shot baselines is now required after the table*_ fix (old numbers aren't trustworthy for comparison), the table\__ bug investigation itself is logged as a solved Sprint 1 problem, GRPO is broken out into concrete sub-tasks (reward design per the PCPO paper, rewriting the still-GSM8K-based GRPO template for ViNumQA), and an explainability evaluation criterion was added to Sprint 3 to match the "research + explainable system" framing already agreed on for the mentor slide deck. Also fixed a typo in the template's own Sprint 3 start date (07-13, predating Sprint 1 — corrected to 08-13).
+
+## 30/7/2026
+
+Read through the full Vietnamese reasoning-trace datasets (`train_with_reasoning_trace.json`, `valid_with_reasoning_trace.json`) end-to-end to check for label leakage, since the CoNR distillation prompt used to generate them is backward rationalization: the teacher is shown the gold program/answer and asked to write a trace that arrives at it, with the prompt only explicitly forbidding a narrow set of leak phrases. Widening the denylist regex (added variants like "chương trình được cung cấp", "tuân thủ chương trình", "đáp án được xác nhận") surfaced ~26/2905 train (0.9%) and ~6/571 valid (1.05%) samples where the teacher's reasoning explicitly acknowledged it was following a program it had been handed — including at least one case where it noted the program contradicted the question's own wording but reproduced it anyway. Low rate, but real and qualitatively serious enough (a trace that teaches contradiction-following) to change pipeline rather than just filter the affected rows.
+
+Decided to move off backward rationalization entirely and adopt an independent-solve pipeline for the next distillation pass, following the shape of Chi's approach (context+question only, no gold shown, filter post-hoc by exact program match) but adding a self-reflection step as an improvement: before committing to a final program, the teacher drafts one, explicitly re-checks it against the question and a set of format rules, then emits a revised final program — aimed at raising the exact-match rate proactively rather than relying solely on post-hoc filtering. Wrote `notebooks/vinumqa/distill-reasoning-trace/qwen3-next-80b-conr-trace-gen-independent-solve-reflect.ipynb`, reusing the existing vLLM/parsing scaffolding but with a new system prompt (independent-solve + `<think>`/`<draft_program>`/`<reflection>`/`<program>` output format) and the convention rules from Chi's error analysis baked in directly (no nested calls, no unjustified `*100` rescaling, no wrapping a single value in `table_sum`, only the 10 valid operators, always emit a program, `table_*(row_label, none)` format) — these rules took Chi's own independent-solve exact-match from 14.4% to 62.8%/63.4% train/valid. Scoring reuses `notebooks/evaluate/scorer.py`'s `equal_program` instead of a bespoke reimplementation. Not yet run against the teacher model.
+
+Fixed a broken streaming cell in `vsf-few-shot-vinumqa.ipynb` (mismatched `stream=True`/`False` against how the response was being parsed) back to a clean non-streaming request, matching how the rest of that notebook consumes `chat_completion.choices[0].message.content`.
+
+Set up few-shot inference against GLM-5.2 on FPT AI Factory (`https://mkp-api.fptcloud.com`), which enforces RPM=50/TPM=100,000 — kept entirely separate from the generic `vsf-few-shot-vinumqa.ipynb` rather than editing it, since the rate-limit handling is endpoint-specific. Built `vsf-few-shot-vinumqa-glm5.2-rate-check.ipynb` first to measure real per-request cost via the API's own `usage.prompt_tokens`/`total_tokens` (mean ~2407/2721 over 15 probe requests) rather than guessing, which showed TPM — not RPM — is the binding constraint (~36.7 req/min safe ceiling, well under the RPM cap). That probe also confirmed GLM-5.2 returns its chain-of-thought in a separate `message.reasoning_content` field, distinct from `message.content` (verified: `content` came back as a clean program string with no reasoning mixed in), so no extra parsing is needed to keep `generated_program` clean.
+
+Built `vsf-few-shot-vinumqa-glm5.2.ipynb` with a sliding-window `RateLimiter` (throttles on both RPM and TPM before each request, corrected afterward with the real `usage.total_tokens`). First real run still hit a `RateLimitError` at 73/497 despite the limiter showing headroom — root cause was the OpenAI SDK's own built-in retry-on-429 issuing retries that never passed through `limiter.record()`, so the limiter's window silently under-counted what was actually sent to the server. Fixed by disabling the SDK's retry (`max_retries=0`) and handling all retry logic explicitly: on a 429, sleep for the server's `Retry-After` (parsed from the header or the error message body), reset the limiter's window to "full" rather than trust its now-proven-stale count, then retry the same sample (up to 5 attempts). Added checkpointing (results saved to a JSON file after every sample, reloaded and skipped on the next run) so an interruption doesn't require regenerating from sample 0. Before declaring the notebook ready to run, checked it against the actual execution kernel (`ML_DS`, Python 3.8.19, not the 3.10+ assumed while writing it) and found two uses of PEP 604 `X | None` union-type annotations that would have raised `TypeError` immediately on kernel start — fixed by dropping the annotations. Verified end-to-end by executing the notebook's code directly against the real kernel (import chain, `RateLimiter`, dataframe construction, checkpoint resume logic) up to the point of the actual network call.
+
+## 31/7/2026
+
+Extended the in-context learning (0-shot/1-shot/few-shot) model coverage beyond the earlier baseline runs. Models now run across all three ICL settings: Qwen3-4B, Gemma3-4B, gemma-3-27b-it, gemma-4-31B-it, gpt-oss-20b, gpt-oss-120b, Llama-3.3-70B-Instruct, DeepSeek-V4-Flash, GLM-5.2, gpt-5-nano (medium effort), and qwen3-4b-thinking.
