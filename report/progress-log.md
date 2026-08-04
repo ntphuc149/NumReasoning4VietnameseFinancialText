@@ -78,3 +78,19 @@ Built `vsf-few-shot-vinumqa-glm5.2.ipynb` with a sliding-window `RateLimiter` (t
 ## 31/7/2026
 
 Extended the in-context learning (0-shot/1-shot/few-shot) model coverage beyond the earlier baseline runs. Models now run across all three ICL settings: Qwen3-4B, Gemma3-4B, gemma-3-27b-it, gemma-4-31B-it, gpt-oss-20b, gpt-oss-120b, Llama-3.3-70B-Instruct, DeepSeek-V4-Flash, GLM-5.2, gpt-5-nano (medium effort), and qwen3-4b-thinking.
+
+## 3-4/8/2026
+
+Fine-tuned three open-source models (Qwen3-4B, Qwen3-4B-Thinking-2507, Gemma3-4B) on the reasoning-trace-distilled ViNumQA training sets produced by the independent-solve pipeline (teacher: gemma-4-31B-it), across both dataset filter variants and both trace languages — 4 SFT configurations per model, plus the no-reasoning-trace baseline:
+
+| Method | Qwen3-4B | Gemma3-4B | qwen3-4b-thinking |
+|---|---|---|---|
+| SFT (wo reasoning/distill) | PA 0.6700 / EA 0.7324 | – | – |
+| SFT (w VIE trace; PA match only) | PA 0.6318 / EA 0.6942 | – | PA 0.6700 / EA 0.7223 |
+| SFT (w ENG trace; PA match only) | PA 0.6519 / EA 0.6962 | – | – |
+| SFT (w VIE trace; PA/partial match) | PA 0.6459 / EA 0.6922 | – | PA 0.6237 / EA 0.6740 |
+| SFT (w ENG trace; PA/partial match) | PA 0.6479 / EA 0.7022 | – | **PA 0.7163 / EA 0.7666** |
+
+Best result overall is qwen3-4b-thinking on the English trace, PA/partial-match dataset (PA 0.7163 / EA 0.7666), ahead of the no-reasoning-trace Qwen3-4B baseline (PA 0.6700 / EA 0.7324) on PA, and the strongest number produced by any method so far in this project (ahead of the best ICL result, gemma-4-31B-it few-shot at PA 0.5674 / EA 0.6137). Every other reasoning-trace configuration for plain Qwen3-4B still lands below its own no-reasoning-trace baseline — the gain is specific to the thinking-variant model on the English, partial-match dataset, not a reasoning-trace effect in general. Gemma3-4B runs did not complete in this window (Kaggle 12h session limit reached mid-training; train/eval notebooks for it are already split per the earlier session-limit fix, re-run pending). Full experiment matrix, dataset variant definitions (PA-match-only vs. PA/partial-match, VIE vs. ENG), and the notebooks used are documented in `notebooks/vinumqa/sft-w-reasoning-trace-distill/README.md` and `datasets/ViNumQA/README.md`.
+
+Also formatted the FinQA dataset (train+dev+test, 8,281 samples combined) to ViNumQA's schema, as a planned training-set augmentation for a future SFT run (`datasets/FinQA/formating_datasets.ipynb` → `FinQA_processed.json`). Before writing the formatter, checked whether `qa.program_re` (FinQA's alternative nested-expression form of the program) could be flattened into extra training samples: confirmed FinQA's `qa.program` itself contains zero nested operator calls in all three splits, matching ViNumQA's flat/`#N`-reference convention, but `program_re` differs from `program` on 3,387/8,281 samples and 2,528 of those use nested call syntax the SYSTEM_MESSAGE never teaches and `scorer.py` cannot execute correctly (misparses the nested call as a single string literal argument, silently scoring both PA and EA as 0). Wrote a flattener and verified on all 3,387 differing samples that the flattened form is symbolically equivalent (`scorer.equal_program`) to `qa.program` in 100% of cases — so flattening `program_re` would only produce near-duplicates of `qa.program`, not new reasoning diversity, and the idea was dropped. Final formatter keeps only `qa.question`/`qa.program`/`qa.exe_ans` (drops `program_re`, `steps`, `explanation`, `ann_table_rows`/`ann_text_rows`, `gold_inds`, `tfidftopn`, `model_input`, and the retriever-stage fields `table_retrieved*`/`text_retrieved*`/`table_ori`, all artifacts of FinQA's original two-stage retrieve-then-generate baseline that don't apply to this repo's single-stage setup). Not yet concatenated into a training run — `qa.exe_ans` is still stored as a float here vs. ViNumQA's string, needs coercing first.
