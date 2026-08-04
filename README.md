@@ -41,12 +41,12 @@ distillation variants used across the SFT experiments below — **see
 file-by-file breakdown** (sample counts, distillation method, language,
 filter). Quick orientation:
 
-| File | Samples | Notes |
-|---|---|---|
-| `train.json` | 2,993 | gold `program` + `exe_ans`, no reasoning trace |
-| `valid.json` | 584 | gold `program` + `exe_ans`, no reasoning trace |
-| `test.json` | 497 | public test set, gold provided — **fixed evaluation set for every result below** |
-| `private_test.json` | 1,625 | **no gold** — held out for leaderboard scoring |
+| File                                     | Samples   | Notes                                                                                              |
+| ---------------------------------------- | --------- | -------------------------------------------------------------------------------------------------- |
+| `train.json`                             | 2,993     | gold `program` + `exe_ans`, no reasoning trace                                                     |
+| `valid.json`                             | 584       | gold `program` + `exe_ans`, no reasoning trace                                                     |
+| `test.json`                              | 497       | public test set, gold provided — **fixed evaluation set for every result below**                   |
+| `private_test.json`                      | 1,625     | **no gold** — held out for leaderboard scoring                                                     |
 | `*_with_reasoning_trace*.json` (8 files) | 450–2,993 | distilled `qa.reasoning_trace` variants — see the dataset README for which one backs which SFT row |
 
 Each entry: `{pre_text, table, post_text, id, qa: {question, program, exe_ans}}`.
@@ -134,6 +134,7 @@ counts over the gold programs) raised exact-match from 14.4% to 62.8%/63.4%
 either a strict surface-normalized check or sympy-based PA equivalence
 (`notebooks/evaluate/scorer.py`) — two complementary, non-redundant tests.
 Two filter strictness levels are shipped:
+
 - **PA match only** — the stricter filter, fewest samples.
 - **PA + partial match** — also accepts numeric-surface-form differences
   (`100` vs `100.00`) that PA alone rejects; a superset of PA-match-only.
@@ -165,7 +166,7 @@ Best in-context result so far: **gemma-4-31B-it, few-shot (3)** — PA 0.5674 / 
 
 ### Fine-tuned
 
-<img src="img/sft.png" alt="With supervised fine-tuning" width="550">
+<img src="img/sft.png" alt="With supervised fine-tuning" width="480">
 
 PA/EA are computed with the shared evaluator in `notebooks/evaluate/scorer.py`
 (sympy-based symbolic Program Accuracy, table-row-lookup-aware Execution
