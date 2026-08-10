@@ -108,3 +108,5 @@ Current STaNR_v1 standing (Table 2): Qwen3-4B PA 0.6680/EA 0.7163 (self-distille
 ## 10/8/2026
 
 Teammate Hiếu pushed `datasets/ViNumQA/self-distill/train_gemma-3-4b.json` / `valid_gemma-3-4b.json` — Gemma3-4B's own-checkpoint self-distillation pair (single generation per teacher-failed sample, matching Qwen3-4B's collection method), completing Table 2's three-model `STaNR_v1` row. Updated `datasets/ViNumQA/self-distill/README.md` to list the new pair and note all three models now self-distill from their own checkpoint.
+
+Chi and Hiếu are now running the same self-distillation pipeline for Table 3 (ViNumQA+FinQA combined training set — `datasets/FinQA/self-distill/`), each self-distilling their respective model's own checkpoint (qwen3-4b-thinking and Gemma3-4B) that was fine-tuned on the combined training set. Qwen3-4B's combined-training self-distillation pair is already in `datasets/FinQA/self-distill/train_qwen3-4b.json` / `valid_qwen3-4b.json`; once Chi's and Hiếu's runs land, Table 3's `STaNR_v1` row will have all three models filled in, matching Table 2.
