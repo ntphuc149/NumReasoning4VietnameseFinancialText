@@ -18,8 +18,10 @@ See `notebooks/vinumqa/sft-w-reasoning-trace-distill/qwen3-4b-self-distill-teach
 |---|---|
 | `train_qwen3-4b.json` / `valid_qwen3-4b.json` | Qwen3-4B's own checkpoint, single generation per sample |
 | `train_qwen3-4b-thinking.json` / `valid_qwen3-4b-thinking.json` | qwen3-4b-thinking's own checkpoint, **majority-of-5 voting** (5 independent generations per teacher-failed sample, keep the modal program, first-generation as tiebreak) |
+| `train_gemma-3-4b.json` / `valid_gemma-3-4b.json` | Gemma3-4B's own checkpoint, single generation per sample |
 
-Gemma3-4B's self-distilled pair is still running (teammate).
+All three models now self-distill from their own checkpoint (no cross-model
+distillation remains in Table 2's `STaNR_v1` row).
 
 **Why the two collection strategies differ**: an early single-generation run
 looked like a regression for one model, which raised a "self-loop
