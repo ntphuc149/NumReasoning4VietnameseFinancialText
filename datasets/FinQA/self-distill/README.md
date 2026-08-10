@@ -12,7 +12,7 @@ this doc only covers what's different here.
    `datasets/FinQA/origin/finqa.json` (FinQA's train+dev+test merged into
    ViNumQA's schema). Teacher `gemma-4-31B-it` attempts every sample
    (context+question only); PA-match-verified samples from *both* sources
-   become the base of `train_finqa_vinumqa_combined_teacher_and_self_distill.json`
+   become the base of `train_qwen3-4b.json`
    (64.64% of the combined pool — root README Table 3's `train (%)` for the
    `SFT (w ENG trace; PA match only)` row).
 2. **Validation** for this training run is `datasets/ViNumQA/origin/valid.json`
@@ -31,15 +31,32 @@ this doc only covers what's different here.
    - **Train side** — teacher-failed samples from **both** ViNumQA train and
      FinQA (since both fed into the same base training pool in step 1). Keep
      PA-verified self-distilled traces, merge with the base set →
-     **`train_finqa_vinumqa_combined_teacher_and_self_distill.json`**.
+     **`train_{model}.json`**.
    - **Valid side** — teacher-failed samples from **ViNumQA valid only**
      (FinQA has no valid side to fail on, per step 2). Keep PA-verified
      self-distilled traces, merge with the base valid set →
-     **`valid_model_qwen3-4b.json`**.
+     **`valid_{model}.json`**.
 
 ## Files here
 
+Naming convention matches `datasets/ViNumQA/self-distill/`:
+`train_{model}.json` / `valid_{model}.json`, one pair per model that's been
+through this pipeline.
+
 | File | Contents |
 |---|---|
-| `train_finqa_vinumqa_combined_teacher_and_self_distill.json` | Training set: PA-verified teacher solutions (ViNumQA + FinQA) + self-distilled additions from the combined-trained checkpoint |
-| `valid_model_qwen3-4b.json` | ViNumQA-only validation set, enriched the same way, using the checkpoint trained on the **combined** (ViNumQA+FinQA) data — do not confuse with `datasets/ViNumQA/self-distill/valid_qwen3-4b.json`, which is self-distilled from a checkpoint trained on ViNumQA **alone** |
+| `train_qwen3-4b.json` | Training set: PA-verified teacher solutions (ViNumQA + FinQA) + self-distilled additions from Qwen3-4B's combined-trained checkpoint |
+| `valid_qwen3-4b.json` | ViNumQA-only validation set, enriched the same way, using the checkpoint trained on the **combined** (ViNumQA+FinQA) data |
+
+**Despite the identical filenames, this is not the same content as
+`datasets/ViNumQA/self-distill/train_qwen3-4b.json` /
+`valid_qwen3-4b.json`** — those are self-distilled from a checkpoint trained
+on ViNumQA **alone**; the files here are from a checkpoint trained on
+ViNumQA **+ FinQA combined**. The directory (`datasets/FinQA/self-distill/`
+vs. `datasets/ViNumQA/self-distill/`) is what disambiguates them — always
+check which directory a `train_{model}.json`/`valid_{model}.json` came from
+before using it.
+
+When adding a new model's pair here (e.g. Gemma3-4B, qwen3-4b-thinking),
+follow the same steps 1–4 above with that model in place of Qwen3-4B, and
+name the files `train_{model}.json` / `valid_{model}.json` to match.
