@@ -9,5 +9,9 @@
 /notebooks/vinumqa/distill-reasoning-trace/conr_trace_full_valid.json
 /notebooks/vinumqa/distill-reasoning-trace/conr_trace_sft_ready.json
 /notebooks/vinumqa/sft-grpo/template-sft-grpo-qwen3-4b-base.ipynb
+/notebooks/vinumqa/graph-agent/outputs
 /temp
 __pycache__/
+.pytest_cache/
+gemma3-4b-grpo-continue-modal-a100-80gb.ipynb
+Lê Dương Hiếu.xlsx

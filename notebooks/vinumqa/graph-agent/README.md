@@ -1,0 +1,281 @@
+# MPR-Agent — graph-based multi-agent pipeline
+
+An implementation of Nguyen, Ha, Le & Vu, *"A Graph-Based Agent Approach to
+Numerical Reasoning Question Answering"* (VLSP 2025,
+[aclanthology.org/2025.vlsp-1.29](https://aclanthology.org/2025.vlsp-1.29/)) —
+the system that **won Subtask 2 of this shared task with EA 84.00%**.
+
+```
+graph-agent/
+├── agentic/                          the pipeline (8 modules)
+├── tests/test_agentic.py             53 tests, no API calls
+├── mpr-agent-gemma-4-31b-it.ipynb    driver: smoke → full → ablation → A/B
+└── outputs/                          traces, per-sample CSV, summaries (gitignored)
+```
+
+## Why this sits apart from the rest of `notebooks/vinumqa/`
+
+Every other method in this repo is single-pass: one model, one prompt, one
+program. 0/1/few-shot prompt it, SFT fine-tunes it, CoNR/STaNR improve its
+training labels, GRPO optimises its policy.
+
+This one **trains nothing**. It is inference-only and changes only *how the
+model is asked*. On the paper's own baseline comparison, that took a Qwen3-32B
+from EA 47.89 → 81.29 and PA 40.24 → 75.25. It is therefore orthogonal to
+everything else here, and stackable on it — nothing stops the planner node
+pointing at an SFT or STaNR checkpoint instead of an API model.
+
+---
+
+## The two graphs
+
+### 1. The pipeline DAG — four agent nodes
+
+```
+q, C ──▶ [1] SubqueryGenerator   G_sq(q, C)            SQ = {sq_1..sq_k}, k∈[3,5]
+                    │ fan-out, one independent call per subquery
+         [2] SubqueryAnswerer    A_sq(sq_j, C)         V  = {v_1..v_k}
+                    │ fan-in
+         [3] Planner             P_n-sample(V,C,q,T)   n = 15 candidate plans
+                    │
+         [4] EquationExtractor   canonicalise → vote → p* → Execute → a*
+```
+
+| Node | Paper |
+|---|---|
+| Subquery Generator | §4.1, eq. (1), prompt B.1/B.2 |
+| Subquery Answerer | §4.2, eq. (2), prompt B.3/B.4 |
+| Plan and Scheduler | §4.3, eq. (3), prompts B.5–B.12 |
+| Equation Extractor | §4.4, eqs. (4), (5), Figure 1 |
+
+`agents.AgentGraph` resolves execution order from declared dependencies rather
+than hard-wiring the chain, so the paper's ablations are configuration changes
+rather than a second code path.
+
+### 2. The plan DAG — inside each candidate
+
+The planner prompt asks for *"maximum parallelization"*, so a plan is not a list
+but a computation DAG: independent actions share a topological level.
+`program.PlanGraph.levels()` recovers that structure and
+`program.parallelism()` reports the mean actions per level — i.e. whether the
+model actually complied.
+
+## The three ideas that make it work
+
+1. **Separate *finding numbers* from *doing arithmetic*** (§4.1). Long financial
+   documents cause attention drift; asking one model to locate figures *and*
+   chain multi-step arithmetic fails at both. The prompt's three `DO NOT` rules
+   (no comparisons, no calculations, no final answers) enforce the boundary.
+2. **Never commit to one reasoning path** (§4.3). Sample n=15 plans
+   independently at temperature 0.6 instead of greedily decoding one.
+3. **Consensus instead of a critic** (§4.4). No judge model, no labels:
+   canonicalise, cluster, take the largest cluster, break ties on fewer steps.
+
+The paper's own ablation (Table 4, public test):
+
+| Configuration | 8B EA / PA | 32B EA / PA |
+|---|---|---|
+| Full MPR-Agent | 78.47 / 71.83 | 81.29 / 75.25 |
+| Decomposition only (n=1) | 72.84 / 62.58 | 79.48 / 66.80 |
+| Multi-path only (no decomposition) | 78.38 / 70.91 | 80.91 / 74.65 |
+| Direct-prompt baseline | 41.05 / 32.60 | 47.89 / 40.24 |
+
+Read carefully: **n-sampling carries most of the gain** in their setup.
+Removing decomposition costs ~0.1–0.4 EA; removing n-sampling costs 5.6 EA /
+9.3 PA at 8B. But the largest gap by far is *having the pipeline at all*
+(+30–37 points over direct prompting). Appendix A: EA peaks at n=10, PA at
+n=15 — hence n=15, since PA is the primary metric.
+
+---
+
+## The module map
+
+| Module | Job |
+|---|---|
+| `config.py` | `AgentConfig` / `RunConfig`; every knob annotated "paper's" or "ours" |
+| `scoring.py` | The one bridge to `notebooks/evaluate/scorer.py` — loaded by path, never copied |
+| `prompts.py` | Appendix B verbatim (VI + EN), opt-in patches, fallback prompt |
+| `llm.py` | Context formatting (`C`) + OpenAI-compatible client, rate limiter, `n` probe |
+| `program.py` | plan DSL → `PlanGraph` → ViNumQA program → vote |
+| `agents.py` | `AgentState`, the four nodes, the pipeline graph |
+| `runner.py` | Batch run, checkpoint/resume, scoring, oracle@n, offline re-vote |
+
+---
+
+## The gap the paper does not have to solve: plan DSL → ViNumQA program
+
+The planner speaks the paper's plan DSL. `scorer.py` grades ViNumQA program
+strings. These are not the same language, the paper never documents its own
+conversion, and `program.py` PART 2 is the reconstruction — the single
+highest-risk code here.
+
+| | Paper plan DSL | ViNumQA program |
+|---|---|---|
+| Syntax | `1. subtract(a='21', b='47')` | `subtract(21, 47)` |
+| References | `$1` — action id, 1-based | `#0` — step position, 0-based |
+| Table ops | `table_max(row_identifier='X')` — **1 arg** | `table_max(X, none)` — **2 args** |
+| Terminator | `join()` + `<END_OF_PLAN>` | none |
+| Operators | 8 + `join` | 10 (adds `exp`, `greater`) |
+
+Seven rules, each justified in the `program.py` PART 2 header. The three that
+matter most:
+
+- **`table_*(row, none)`.** Verified on the data: all 63 `table_*` calls in the
+  gold test programs pass exactly `none` as the second argument. Row labels are
+  emitted **unquoted** — real labels contain brackets (`ROE (%)`, `P/E (x)`,
+  `EPS (VND)`) which `scorer.py`'s bracket-aware tokeniser handles but quotes
+  would break.
+- **Literals pass through verbatim.** `scorer.py`'s PA admits only literals that
+  occur in the gold program, so any helpful-looking renormalisation is a direct
+  PA loss. Gold legitimately contains `100` (e.g. `subtract(96.67, 100),
+  divide(#0, 100)` for a base-100 index), so `100` cannot be special-cased.
+- **Dead branches are pruned.** A branch the answer does not use cannot change
+  EA (the last step is the result) but *can* cost PA, because `equal_program`
+  walks every step of the prediction and rejects one whose literal is absent
+  from gold.
+
+### On `exp` and `greater`
+
+Counted over the real splits: `exp` appears **0 times** in train and test;
+`greater` appears **once** in test, **never** in train. The paper's eight tools
+already cover 496/497 test samples, so they stay as-is; the two extras live
+behind `use_prompt_ext`.
+
+---
+
+## Fidelity to the paper — what matches and what does not
+
+### Matches
+
+4-node architecture and node roles; all Appendix B prompts verbatim (including
+the paper's own typo); `n=15`, `T=0.6`, `top_p=0.95`, `top_k=20`; planner
+receives `(V, C, q, T)` per eq. (3); tie-break on fewer steps; inference-only;
+both graphs explicit.
+
+One field is **not** verbatim and is marked so in `prompts.py`:
+`planner_query_block`. The paper prints B.7/B.9/B.11 as static instruction text
+but never shows the block carrying the question, context, and subquery answers.
+It is reconstructed from B.9's reference to a section headed "BỐI CẢNH BỔ SUNG
+TỪ TRUY VẤN CON" and the `Truy vấn:` / `Bối cảnh:` / `Kế hoạch:` shape of
+B.11's worked examples.
+
+### Known gap — the level at which votes are counted
+
+§4.4's prose describes canonicalising **programs** and grouping them. That is
+what is implemented.
+
+But Figure 1 labels the stage **"Top result voting"** and draws each candidate
+beside its executed value:
+
+| Candidate in Figure 1 | Value |
+|---|---|
+| `add(19038.80, 9445.09), add(#0, 6286.89)` | 34770.78 |
+| `add(19038.80, 6286.89), add(#0, 9445.09)` | 34770.78 |
+| `add(19038.80, 31434.47), add(#0, 6286.89)` | 56760.16 |
+
+The first two are **structurally different programs with the same value**, and
+the figure shows 34770.78 winning **2–1**. Under program-structure voting they
+land in different clusters, so the count is 1–1–1 and the depicted majority
+never forms — the paper's own example is not reproducible under its own prose.
+The mechanism it draws is voting over **executed results**.
+
+Circumstantial support: the paper's EA (84.00) exceeds its PA (74.07) by ten
+points, and §5.5 says *"our agent prioritizes functional correctness over
+stylistic conformity"* — the signature of result-level selection.
+
+`test_figure_1_candidates_are_not_merged_by_structure_voting` pins the current
+behaviour so that adding a result-level mode later reads as a deliberate change.
+**Pending**: `vote_mode="result"`. Because every candidate is kept on disk with
+its executed value, this can be evaluated on existing runs via
+`runner.revote()` with no further API calls.
+
+### On `vote_mode="symbolic"`
+
+Less than it sounds, and the code says so. `equal_program` admits only literals
+present in the program it is compared against, so it merges **algebraic
+rearrangements over the same literals** (`multiply(add(a,b), c)` with
+`add(multiply(a,c), multiply(b,c))`) — nothing more. It does **not** merge the
+Example 5.1 pair, which introduces new literals. That is a prompt problem
+(`use_prompt_ext`), not a voting problem.
+
+---
+
+## Decisions that are ours, not the paper's
+
+Each is a flag, so its effect is measurable rather than baked in.
+
+| Flag | Default | Why |
+|---|---|---|
+| `drop_invalid_candidates` | `True` | Voting over programs that cannot execute lets a malformed cluster outvote a working one |
+| `validate_row_labels` | `True` | A `table_*` naming an absent row always executes to `n/a`; catching it names the failure instead of hiding it in a zero |
+| `use_direct_prompt_fallback` | `True` | An empty prediction is a guaranteed zero on both metrics. Every use is recorded, so `fallback_rate` is reported next to PA/EA |
+| `keep_all_candidates` | `True` | Required for oracle@n, and for offline re-voting |
+| `use_prompt_ext` | `False` | Keeps the headline run prompt-faithful |
+| `temperature_planner` | `None` | `None` = the paper's shared 0.6 |
+
+### oracle@n — the diagnostic the paper needs but does not report
+
+`Runner.oracle()` scores the *best* of the n candidates per sample, splitting
+the paper's two failure modes (§5.5.2) apart:
+
+- `oracle_pa − program_accuracy` → what majority voting **threw away**
+  (their "heuristic selection error")
+- `1 − oracle_pa` → what the base model **never generated**
+  (their "systematic reasoning error")
+
+---
+
+## Running
+
+Needs `API_KEY` and `BASE_URL` in `.env` at the project root. Run the tests
+first — they cover the transpiler against every gold program in all three
+splits and cost nothing:
+
+```bash
+.venv/Scripts/python -m pytest notebooks/vinumqa/graph-agent/tests -q
+```
+
+```python
+import sys; sys.path.insert(0, "notebooks/vinumqa/graph-agent")
+from dotenv import load_dotenv; load_dotenv()
+from agentic import AgentConfig, RunConfig, Runner
+
+runner = Runner(RunConfig(run_name="mpr-agent", agent=AgentConfig()))
+df = runner.run()                       # checkpoints per sample, resumable
+scored, summary = runner.score(df)      # PA/EA + oracle@n
+runner.save(scored, summary)
+```
+
+Ablations (paper Table 4) — the direct-prompt baseline row already exists in
+this repo's 0-shot/few-shot notebooks, so it does not need re-running:
+
+```python
+AgentConfig(n_samples=1)              # "Decomposition Only"
+AgentConfig(use_decomposition=False)  # "Multi-Path Only"
+```
+
+Cost is dominated by the planner: with server-side `n` supported by the
+endpoint, roughly **4.5 requests and ~9k tokens per sample**; without it, about
+20 requests per sample. `llm.py` probes for that once at startup and caches it.
+
+---
+
+## Two things to know before reading any number
+
+**n-sampling may be doing nothing on your model.** Measured on
+`gemma-4-31B-it` at the paper's `temperature = 0.6`: 26 of 30 smoke samples
+produced a *single distinct plan* across all 15 generations, and `oracle@15`
+equalled plain PA exactly. This was checked three ways on a real planner prompt
+— this package's client, a raw server-side `n=15` call, and 15 separate
+requests — all returned 1 distinct plan, while a control probe on an open-ended
+prompt returned 9 distinct out of 15. Raising planner temperature to 0.9 and
+1.2 changed the distinct-*plan* count slightly but not the distinct-*program*
+count. Once decomposition has pinned the numbers down, the plan is effectively
+determined. The notebook checks this explicitly; check it before attributing
+any gain to multi-path reasoning.
+
+**Prompt fidelity costs PA.** Appendix B.9/B.10 says to strip a percent sign and
+use `48.8`; ViNumQA gold writes such a rate as `0.488`. 34 of the 497 gold test
+programs contain a `0.xx` literal of this kind, and following the prompt
+literally passes EA but fails PA on them — the paper's own Example 5.1. Section
+4 of the notebook A/Bs the one-bullet fix (`use_prompt_ext=True`).
