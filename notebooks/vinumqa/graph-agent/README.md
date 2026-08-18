@@ -7,11 +7,18 @@ the system that **won Subtask 2 of this shared task with EA 84.00%**.
 
 ```
 graph-agent/
-├── agentic/                          the pipeline (9 modules)
-├── tests/                            78 tests, no API calls, no GPU
-├── mpr-agent-gemma-4-31b-it.ipynb    driver: smoke → full → ablation → A/B
-└── outputs/                          traces, per-sample CSV, summaries (gitignored)
+├── agentic/          the pipeline (9 modules)
+├── tests/            97 tests, no API calls, no GPU
+├── mpr-agent.ipynb   driver: config -> full 497-sample run -> PA/EA + error analysis
+└── outputs/          traces, per-sample CSV, summaries (gitignored)
 ```
+
+The notebook is deliberately minimal — one config cell, one cell that runs the
+full `test.json` and prints PA/EA unrounded, one error-analysis cell. The
+smoke-test / baseline-comparison / ablation / prompt-fidelity-A/B cells that
+produced the numbers in this README were run once, by hand, and are not kept
+as live notebook cells — see "Ablation & prompt-fidelity results" below for
+what they found and how to reproduce them if needed.
 
 ## Why this sits apart from the rest of `notebooks/vinumqa/`
 
@@ -185,6 +192,62 @@ a bug.
 
 ---
 
+## Ablation & prompt-fidelity results
+
+Measured on `DeepSeek-V4-Flash`, full `test.json` (497 samples), 2026-08-18.
+Each row is a separate ~2-3h full run (~8h for all four); reproduce with:
+
+```python
+from dataclasses import replace
+paper_faithful = replace(agent_config, use_decomposition=True)       # "full MPR-Agent"
+decomposition_only = replace(paper_faithful, n_samples=1)             # nodes [1]+[2], single plan
+multi_path_only = replace(agent_config, use_decomposition=False)      # nodes [3]+[4] -- this repo's default
+with_prompt_patch = replace(paper_faithful, use_prompt_ext=True)      # paper-faithful nodes + prompt fix
+# Runner(RunConfig(..., run_name=f"mpr-agent-{MODEL}-<name>", agent=<one of the above>)).run(show_progress=True)
+```
+
+| Configuration | PA | EA | s/sample |
+|---|---:|---:|---:|
+| full MPR-Agent (paper-faithful: decompose + n=15 vote) | 0.7505 | 0.8189 | 22.9 |
+| decomposition-only (decompose, n=1, no vote) | 0.7485 | 0.8330 | 13.7 |
+| **multi-path-only (no decompose, n=15 vote) — this repo's default** | **0.7787** | **0.8370** | **12.4** |
+| + percent-as-decimal + placeholder-clarification patch (paper-faithful nodes, `use_prompt_ext=True`) | 0.7686 | 0.8370 | 20.0 |
+
+**Reading it**: the paper's own ablation (Table 4, above) found decomposition
+helps a *little* on Qwen3 (removing it costs ~0.1–0.4 EA). Here, on
+DeepSeek-V4-Flash, it's the opposite and the effect is not small: dropping
+decomposition entirely *gains* +2.8 PA / +1.8 EA over the paper-faithful
+pipeline, while also being the fastest and cheapest row (skips 2 of 4 nodes'
+API calls). The prompt patch, tested against the paper-faithful (decomposing)
+pipeline, does help there (+1.8 PA) — but not enough to catch up to simply
+dropping decomposition, so it is not layered on top of `multi-path-only` here;
+that combination has not been measured.
+
+**Working hypothesis for the reversal** (not independently verified): the
+subquery-answerer node can extract a wrong fact from the table/text and hand
+it to the planner as confident "additional context," and the pipeline's own
+high `mean_consensus` (~0.91–0.94 throughout) suggests the model commits to
+whatever it is given rather than double-checking it — so a bad extraction
+doesn't just fail to help, it actively steers all 15 planner samples toward
+the same wrong answer. Without decomposition, the planner reasons over the
+raw context directly and reasoning models may simply not need the "divide and
+conquer" scaffolding a weaker instruct model would.
+
+**Error breakdown on the kept `multi-path-only` result** (`oracle@15`
+PA=0.8410, EA=0.8732 — see "oracle@n" below for what this diagnostic means):
+6.24% of samples had a correct candidate that voting picked wrong (*heuristic
+selection error*); 15.90% never generated a correct candidate in any of the 15
+samples (*systematic reasoning error*, voting cannot fix this). Of the wrong
+final answers, 48.18% were **unanimous** — all 15 candidates agreed on the
+same wrong answer — the signature of a systematic model limitation rather
+than voting noise. `fallback_rate` and `empty_rate` were both 0.0000.
+
+**Scope of this finding**: measured on one model (DeepSeek-V4-Flash) only.
+Whether it holds for the other ten baseline models — including the three this
+repo actually fine-tunes — is untested.
+
+---
+
 ## The gap the paper does not have to solve: plan DSL → ViNumQA program
 
 The planner speaks the paper's plan DSL. `scorer.py` grades ViNumQA program
@@ -310,31 +373,38 @@ the paper's two failure modes (§5.5.2) apart:
 
 ## Running
 
-Needs `API_KEY` and `BASE_URL` in `.env` at the project root. Run the tests
-first — they cover the transpiler against every gold program in all three
-splits and cost nothing:
+`mpr-agent.ipynb` is the driver: a config cell (pick `MODEL`, everything else
+defaults to the best-measured setup) and one cell that runs the full
+497-sample `test.json` and prints PA/EA, followed by the error-analysis cell.
+Needs `API_KEY`/`BASE_URL` in `.env` (API model) or a GPU in the kernel (local
+model). Run the tests first — they cover the transpiler against every gold
+program in all three splits and cost nothing:
 
 ```bash
 .venv/Scripts/python -m pytest notebooks/vinumqa/graph-agent/tests -q
 ```
+
+Equivalent, outside the notebook:
 
 ```python
 import sys; sys.path.insert(0, "notebooks/vinumqa/graph-agent")
 from dotenv import load_dotenv; load_dotenv()
 from agentic import AgentConfig, RunConfig, Runner
 
-runner = Runner(RunConfig(run_name="mpr-agent", agent=AgentConfig()))
+runner = Runner(RunConfig(run_name="mpr-agent", agent=AgentConfig(use_decomposition=False)))
 df = runner.run()                       # checkpoints per sample, resumable
 scored, summary = runner.score(df)      # PA/EA + oracle@n
 runner.save(scored, summary)
 ```
 
-Ablations (paper Table 4) — the direct-prompt baseline row already exists in
-this repo's 0-shot/few-shot notebooks, so it does not need re-running:
+To reproduce the paper's Table 4 ablations (the direct-prompt baseline row
+already exists in this repo's 0-shot/few-shot notebooks, so it does not need
+re-running) or the "Ablation & prompt-fidelity results" table above:
 
 ```python
 AgentConfig(n_samples=1)              # "Decomposition Only"
-AgentConfig(use_decomposition=False)  # "Multi-Path Only"
+AgentConfig(use_decomposition=False)  # "Multi-Path Only" -- this repo's default
+AgentConfig(use_prompt_ext=True)      # + percent-as-decimal + placeholder-clarification patch
 ```
 
 Cost is dominated by the planner: with server-side `n` supported by the
@@ -354,11 +424,13 @@ requests — all returned 1 distinct plan, while a control probe on an open-ende
 prompt returned 9 distinct out of 15. Raising planner temperature to 0.9 and
 1.2 changed the distinct-*plan* count slightly but not the distinct-*program*
 count. Once decomposition has pinned the numbers down, the plan is effectively
-determined. The notebook checks this explicitly; check it before attributing
-any gain to multi-path reasoning.
+determined. Check `trace["candidates"]`'s distinct `program` count per sample
+(in a saved `*_traces.json`) before attributing any gain to multi-path
+reasoning on a new model.
 
 **Prompt fidelity costs PA.** Appendix B.9/B.10 says to strip a percent sign and
 use `48.8`; ViNumQA gold writes such a rate as `0.488`. 34 of the 497 gold test
 programs contain a `0.xx` literal of this kind, and following the prompt
-literally passes EA but fails PA on them — the paper's own Example 5.1. Section
-4 of the notebook A/Bs the one-bullet fix (`use_prompt_ext=True`).
+literally passes EA but fails PA on them — the paper's own Example 5.1. See
+"Ablation & prompt-fidelity results" above for the measured cost of the
+one-bullet fix (`use_prompt_ext=True`).
