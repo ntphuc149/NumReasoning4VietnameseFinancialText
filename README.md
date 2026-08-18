@@ -70,7 +70,8 @@ notebooks/vinumqa/
 ├── translate-reasoning-trace/     (abandoned) MT-based trace translation
 ├── sft-wo-reasoning-trace-distill/  QLoRA SFT, program-only labels (baseline)
 ├── sft-w-reasoning-trace-distill/   QLoRA SFT, distilled-reasoning-trace labels
-└── sft-grpo/                      (planned) SFT + GRPO policy optimization stage
+├── sft-grpo/                      (planned) SFT + GRPO policy optimization stage
+└── graph-agent/                   MPR-Agent: inference-only multi-agent pipeline (no training)
 notebooks/evaluate/                shared PA/EA scorer (scorer.py)
 notebooks/translated-finqa/        (placeholder) planned baselines on the translated-FinQA subset
 datasets/ViNumQA/                  ViNumQA splits + distillation variants (see structure above)
@@ -177,6 +178,26 @@ teacher-verified pool and the self-distillation candidate pool to
 execution correctness, and conciseness (following the program-centric policy
 optimization approach in `papers/`), to further refine the SFT model beyond
 supervised imitation. Not yet implemented.
+
+### 6. MPR-Agent — multi-agent pipeline (inference-only)
+
+`notebooks/vinumqa/graph-agent/` — an implementation of the VLSP2025
+Subtask-2-winning graph-based agent paper (decompose question → answer
+subqueries → sample 15 candidate programs → vote), reusing the same
+`scorer.py` so results are directly comparable to every method above. Unlike
+1–5, it **trains nothing**; it only changes how an existing model is prompted,
+and runs on any of the project's eleven baseline models via a pluggable
+local/API backend (`agentic/backends.py`). Full detail, the module design, and
+the ablation results below are in
+[`notebooks/vinumqa/graph-agent/README.md`](notebooks/vinumqa/graph-agent/README.md).
+
+On `DeepSeek-V4-Flash`, full `test.json`: **PA 0.7787 / EA 0.8370** — well
+above the best in-context result (few-shot(3), PA 0.5674 / EA 0.6137) on the
+same model, achieved purely by restructuring the prompting into this pipeline.
+Dropping the paper's subquery-decomposition step outperformed the paper-faithful
+four-node pipeline here (PA 0.7505 / EA 0.8189) — the opposite of what the
+paper's own ablation found on Qwen3; see that README for the full comparison
+and working hypothesis.
 
 ## Results (test.json, 497 samples)
 
