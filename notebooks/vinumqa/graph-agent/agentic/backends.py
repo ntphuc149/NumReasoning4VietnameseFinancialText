@@ -224,7 +224,21 @@ class LocalBackend:
     # -------------------------------------------------------------- decode --
     def _generate(self, system: Optional[str], user: str, max_tokens: int,
                   temperature: Optional[float], n: int) -> list[str]:
-        """The one place that calls generate(). Caller must hold `_lock`."""
+        """The one place that calls generate(). Caller must hold `_lock`.
+
+        `num_return_sequences=n` shares one prompt's KV cache across all n
+        completions -- cheap when it fits, but EVERY sequence's KV cache has
+        to live in VRAM at once for the whole call, and that scales with n
+        AND with prompt length. Measured cause of a real failure: n=15 at a
+        ~4-5k token planner prompt OOM'd on a 14.56 GB Kaggle T4 (all 10
+        samples in the run, ~800 MiB short each time) -- there was no retry,
+        so every sample lost its entire planner stage. Retrying at a SMALLER
+        n on OOM, rather than assuming one fixed "safe" batch size, matches
+        this file's other adaptive-retry (llm.py's reasoning-budget
+        escalation): the safe batch size depends on prompt length, which
+        varies per sample, so it has to be discovered per call, not guessed
+        once for every model/GPU/prompt combination.
+        """
         import torch
 
         tokenizer, model = self._tokenizer, self._model
@@ -247,26 +261,53 @@ class LocalBackend:
 
         cfg = self.config
         temp = cfg.temperature if temperature is None else temperature
-        gen_kwargs: dict = {"max_new_tokens": new_tokens}
+        base_kwargs: dict = {"max_new_tokens": new_tokens}
         if temp is not None and temp > 0:
-            gen_kwargs.update(do_sample=True, temperature=temp, top_p=cfg.top_p)
+            base_kwargs.update(do_sample=True, temperature=temp, top_p=cfg.top_p)
             if cfg.send_top_k:
-                gen_kwargs["top_k"] = cfg.top_k
+                base_kwargs["top_k"] = cfg.top_k
         else:
-            gen_kwargs["do_sample"] = False
-        if n > 1:
-            gen_kwargs["num_return_sequences"] = n
+            base_kwargs["do_sample"] = False
 
-        with torch.no_grad():
-            out = model.generate(**inputs, **gen_kwargs)
+        texts: list[str] = []
+        remaining = n
+        batch_size = n  # optimistic: try the whole thing in one call first
+        while remaining > 0:
+            this_batch = min(batch_size, remaining)
+            gen_kwargs = dict(base_kwargs)
+            if this_batch > 1:
+                gen_kwargs["num_return_sequences"] = this_batch
 
-        gen_only = [row[prompt_len:].tolist() for row in out]
-        completion_tokens = sum(len(g) for g in gen_only)
-        self.usage.add(prompt_len, completion_tokens, prompt_len + completion_tokens)
+            try:
+                with torch.no_grad():
+                    out = model.generate(**inputs, **gen_kwargs)
+            except torch.cuda.OutOfMemoryError as exc:
+                torch.cuda.empty_cache()
+                if this_batch <= 1:
+                    # Nothing smaller left to try -- a single sequence at
+                    # this prompt length genuinely does not fit.
+                    raise LLMError(
+                        f"{self.name}: out of memory generating a single "
+                        f"sequence at prompt_len={prompt_len} tokens, "
+                        f"max_new_tokens={new_tokens} -- lower "
+                        f"max_seq_length or max_tokens_*, or use a smaller "
+                        f"model on this GPU."
+                    ) from exc
+                batch_size = max(1, this_batch // 2)
+                print(f"LocalBackend: OOM at batch={this_batch} for {self.name!r} "
+                      f"(prompt_len={prompt_len}); retrying at batch={batch_size}.")
+                continue  # retry this same remaining chunk, not the whole n
 
-        if self.spec.thinking:
-            return [strip_think(tokenizer, g) for g in gen_only]
-        return [tokenizer.decode(g, skip_special_tokens=True).strip() for g in gen_only]
+            gen_only = [row[prompt_len:].tolist() for row in out]
+            completion_tokens = sum(len(g) for g in gen_only)
+            self.usage.add(prompt_len, completion_tokens, prompt_len + completion_tokens)
+            if self.spec.thinking:
+                texts.extend(strip_think(tokenizer, g) for g in gen_only)
+            else:
+                texts.extend(tokenizer.decode(g, skip_special_tokens=True).strip() for g in gen_only)
+            remaining -= this_batch
+
+        return texts
 
     # --------------------------------------------------------------- public --
     def complete(self, system: Optional[str], user: str, model: str,
