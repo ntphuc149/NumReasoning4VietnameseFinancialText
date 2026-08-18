@@ -33,18 +33,26 @@ See `papers/` for the shared task description, the original FinQA paper this
 task's format is based on, and a program-centric policy optimization paper
 used as a reference for the SFT+GRPO stage.
 
-## Dataset — ViNumQA
+## Dataset — ViNumQA (+ FinQA augmentation)
 
-`datasets/ViNumQA/`:
+`datasets/ViNumQA/` and `datasets/FinQA/` are each organized by pipeline
+stage — **see [`datasets/ViNumQA/README.md`](datasets/ViNumQA/README.md)
+and [`datasets/FinQA/README.md`](datasets/FinQA/README.md) for the full
+file-by-file breakdown**. Quick orientation:
 
-| File | Samples | Notes |
-|---|---|---|
-| `train.json` | 2,993 | gold `program` + `exe_ans` provided |
-| `valid.json` | 584 | gold `program` + `exe_ans` provided |
-| `test.json` | 497 | public test set, gold provided (for local eval) |
-| `private_test.json` | 1,625 | **no gold** — held out for leaderboard scoring |
-| `train_with_reasoning_trace.json` | 2,905 | `train.json` + distilled `qa.reasoning_trace` field (see below) |
-| `valid_with_reasoning_trace.json` | 571 | same, for `valid.json` |
+```
+datasets/ViNumQA/
+├── origin/                      original train/valid/test/private_test splits
+├── backward-rationale-distill/  superseded trace-distillation pipeline (kept for comparison)
+├── distill-from-gemma-teacher/  current pipeline: independent-solve, teacher gemma-4-31B-it
+└── self-distill/                STaNR: self-distillation from a model's own fine-tuned checkpoint
+datasets/FinQA/                  same structure, used only as a training-set augmentation (see below)
+```
+
+`test.json` (in `origin/`) is the **fixed evaluation set for every result
+below** — never used for training, validation, or filtering. `valid.json`
+(also in `origin/`) is the validation set for every SFT run, whether the
+training set is ViNumQA alone or ViNumQA+FinQA combined.
 
 Each entry: `{pre_text, table, post_text, id, qa: {question, program, exe_ans}}`.
 Unlike the original English FinQA, this dataset does **not** include a
@@ -58,20 +66,28 @@ notebooks/vinumqa/
 ├── 0-shot/                        0-shot prompting baselines
 ├── 1-shot/                        1-shot prompting baselines
 ├── few-shot/                      3-shot prompting baselines
-├── distill-reasoning-trace/       teacher (Qwen3-Next-80B) → reasoning trace generation
-├── sft-wo-reasoning-trace-distill/  QLoRA SFT, program-only labels (no trace)
+├── distill-reasoning-trace/       teacher → reasoning-trace distillation (CoNR)
+├── translate-reasoning-trace/     (abandoned) MT-based trace translation
+├── sft-wo-reasoning-trace-distill/  QLoRA SFT, program-only labels (baseline)
 ├── sft-w-reasoning-trace-distill/   QLoRA SFT, distilled-reasoning-trace labels
 └── sft-grpo/                      (planned) SFT + GRPO policy optimization stage
+notebooks/evaluate/                shared PA/EA scorer (scorer.py)
 notebooks/translated-finqa/        (placeholder) planned baselines on the translated-FinQA subset
-datasets/ViNumQA/                  dataset splits (see table above)
+datasets/ViNumQA/                  ViNumQA splits + distillation variants (see structure above)
+datasets/FinQA/                    FinQA, used as a training-set augmentation for ViNumQA
 papers/                            reference papers (task description, FinQA, PCPO)
 ```
+
+**Every subdirectory above has its own `README.md`** with the per-notebook
+breakdown — `notebooks/README.md` is the entry point into those; start there
+for anything beyond a quick orientation. `datasets/README.md` /
+`datasets/ViNumQA/README.md` cover the dataset variants in the same way.
 
 Every prompting/SFT notebook shares the same `SYSTEM_MESSAGE` (operator list +
 formatting rules), the same `pre_text`/`table`/`post_text`/`question` context
 formatting (table rendered as GitHub-flavored markdown via `tabulate`), and
-the same program parser/PA/EA scorer, so results are directly comparable
-across models and methods.
+the same program parser/PA/EA scorer (`notebooks/evaluate/scorer.py`), so
+results are directly comparable across models and methods.
 
 ## Methodology
 
@@ -98,46 +114,64 @@ against.
 ### 3. Reasoning-trace distillation (CoNR) + SFT with reasoning
 
 Rather than hoping the student model discovers good reasoning on its own, we
-distill it from a stronger teacher, following the reasoning-distillation
-approach used by the top VLSP 2025 teams (see `papers/`):
+distill it from a stronger teacher, then fine-tune the student to produce
+`{reasoning_trace}\n</think>\n\n{program}` instead of just `{program}`. Full
+detail (prompt design, filters, sample counts) is in
+[`notebooks/vinumqa/distill-reasoning-trace/README.md`](notebooks/vinumqa/distill-reasoning-trace/README.md)
+and [`datasets/ViNumQA/README.md`](datasets/ViNumQA/README.md).
 
-1. **Teacher**: `Qwen3-Next-80B-A3B-Thinking`, served via vLLM.
-2. **CoNR prompt** (`distill-reasoning-trace/qwen3-next-80b-conr-trace-gen.ipynb`):
-   the teacher is given the context/question **plus the verified gold
-   program and answer**, and asked to write a natural-language reasoning
-   trace that arrives at *exactly* that program — backward rationalization,
-   not independent problem-solving. This guarantees every kept trace is
-   grounded in a correct label, and the prompt explicitly forbids the trace
-   from admitting it was told the answer (denylist-checked afterwards).
-3. **Validation before trusting a trace**: the generated `<program>` is
-   parsed and compared to gold via **exact structural match** (not just
-   execution-equivalence) using the same parser as every other notebook;
-   traces are discarded if the program doesn't match, or if a denylist check
-   catches "as given"/"chương trình được cho là"-style leakage.
-4. **Results**: validated first on two 150-sample trials (92.0% → 98.0% exact
-   match after fixing a parser bug and a `<think>`-tag extraction bug — see
-   the notebook's intro cell for detail), then run at full scale:
-   **98.1%** exact match on `train.json` (2,993 samples), **99.0%** on
-   `valid.json` (584 samples). Nearly all residual mismatches were traced
-   back to actual errors in the gold dataset itself (missing parens, wrong
-   table column/row referenced, a gold program whose direction contradicts
-   its own question wording) rather than teacher-model or pipeline error —
-   in several cases the teacher's answer was verifiably *more* correct than
-   the provided gold label.
-5. **Clean data → `train_with_reasoning_trace.json` / `valid_with_reasoning_trace.json`**:
-   only exact-match, non-leaking traces are kept (2,905 / 571 samples). All
-   other fields (`program`, `exe_ans`, `pre_text`, `table`, `post_text`,
-   `id`) come directly from the original dataset, unmodified — only
-   `qa.reasoning_trace` is new, and every kept sample was index/content
-   cross-checked against the source file (0 mismatches).
-6. **SFT with reasoning** (`sft-w-reasoning-trace-distill/qwen3-4b-stf-w-reasoning-trace.ipynb`):
-   same QLoRA setup as the no-reasoning baseline, but the assistant turn is
-   now `{reasoning_trace}\n</think>\n\n{program}` with `enable_thinking=True`
-   — matching how Qwen3-Next-Thinking's own outputs are structured (no
-   literal opening `<think>` tag; the chat template inserts it after the
-   assistant tag itself).
+Two distillation pipelines were tried:
 
-### 4. SFT + GRPO (planned)
+- **Backward rationalization (superseded)** — teacher `Qwen3-Next-80B-A3B-Thinking`
+  is shown the gold program/answer and asked to write a trace that arrives
+  at it. Reached 98–99% exact-match, but reading the traces end-to-end found
+  ~1% leaked awareness of the answer despite denylist screening.
+- **Independent-solve (current)** — teacher `gemma-4-31B-it` sees only
+  context+question, no gold. A convention-hardened prompt (explicit rules
+  against nested calls, unjustified rescaling, invented operators) raised
+  exact-match from 14.4% to ~63%. Kept in 4 variants: Vietnamese/English ×
+  PA-match-only/PA-partial-match filtering.
+
+**SFT with reasoning** (`sft-w-reasoning-trace-distill/`, Qwen3-4B /
+Qwen3-4B-Thinking-2507 / Gemma3-4B) trains on whichever variant
+`DATASET_VARIANT` selects — see that folder's README.
+
+### 4. STaNR — Self-Taught Numerical Reasoning (proposed)
+
+After ordinary SFT on a teacher-distilled reasoning-trace set (SFT w ENG
+trace, PA-match-only), the **fine-tuned checkpoint itself** is used as a
+second-round teacher on exactly the samples the *original* teacher
+(gemma-4-31B-it) failed to solve during independent-solve distillation. Only
+self-generated traces whose program matches gold under PA are kept, then
+merged back into the training set for one more SFT pass
+(`sft-w-reasoning-trace-distill/qwen3-4b-self-distill-teacher-failed.ipynb`).
+
+Two things worth calling out from getting this working:
+
+- **Self-distillation from a model's own checkpoint is not inherently
+  harmful.** An early run looked like a severe regression for one model,
+  which raised a "self-loop confirmation bias" hypothesis — but that traced
+  back to an evaluation bug (a `</think>` token-boundary split failing on
+  ~39% of that checkpoint's outputs, leaking reasoning prose into the parsed
+  program column) rather than a real modeling problem. Once fixed, and once
+  self-distillation was applied uniformly (every model self-distilling from
+  its *own* checkpoint, not cross-model), all three models improved over
+  their PA-match-only baseline.
+- **Majority-of-k voting on the self-distillation step helps further.**
+  Sampling 5 independent generations per teacher-failed sample and keeping
+  the modal program (first-generation as tiebreak) — rather than a single
+  generation — plausibly filters out "right answer via unsound reasoning"
+  cases that a bare PA-match filter alone doesn't catch (found by manually
+  reading the self-distilled traces: a sample can land on the correct
+  `table_max` call by hedging/coincidence rather than understanding why it
+  applies, and still pass PA).
+
+A second combined training set (`STaNR_v1` in Table 3 below) extends the
+teacher-verified pool and the self-distillation candidate pool to
+**ViNumQA + FinQA** together (FinQA reformatted to ViNumQA's schema — see
+`datasets/FinQA/formating_datasets.ipynb`), instead of ViNumQA alone.
+
+### 5. SFT + GRPO (planned)
 
 `notebooks/vinumqa/sft-grpo/` — reward function combining program validity,
 execution correctness, and conciseness (following the program-centric policy
@@ -146,28 +180,43 @@ supervised imitation. Not yet implemented.
 
 ## Results (test.json, 497 samples)
 
-| Method | Model | PA | EA |
-|---|---|---|---|
-| 0-shot | Qwen3-4B | 0.0000 | 0.0644 |
-| 0-shot | Llama-3.3-70B-Instruct | 0.1730 | 0.4085 |
-| 0-shot | DeepSeek-V4-Flash | 0.2797 | 0.4487 |
-| 0-shot | gpt-5-nano (medium effort) | 0.1831 | 0.2958 |
-| 1-shot | Qwen3-4B | 0.1449 | 0.3159 |
-| 1-shot | Llama-3.3-70B-Instruct | 0.2958 | 0.4567 |
-| 1-shot | DeepSeek-V4-Flash | 0.3259 | 0.4989 |
-| 1-shot | gpt-5-nano (medium effort) | 0.3179 | 0.4346 |
-| few-shot (3) | Qwen3-4B | 0.3159 | 0.4487 |
-| few-shot (3) | Llama-3.3-70B-Instruct | 0.3099 | 0.4527 |
-| few-shot (3) | DeepSeek-V4-Flash | 0.3421 | 0.4909 |
-| few-shot (3) | gpt-5-nano (low effort) | 0.3622 | 0.4648 |
-| QLoRA SFT (no reasoning trace) | Qwen3-4B | 0.6419 | 0.6439 |
-| QLoRA SFT (w/ distilled reasoning trace) | Qwen3-4B | *in progress* | *in progress* |
-| SFT + GRPO | Qwen3-4B | *planned* | *planned* |
+### In-context learning results
 
-PA/EA are computed with the same exact-match/tolerance-based scorer used
-across every notebook (`extract_program` → `parse_program` →
-`compute_program_accuracy` / `compute_execution_accuracy`), so all rows are
-directly comparable.
+![In-context learning performance](img/in-context-learning.png)
+
+Best in-context result so far: **gemma-4-31B-it, few-shot (3)** — PA 0.5674 / EA 0.6137.
+
+### Fine-tuned — ViNumQA training set
+
+<img src="img/sft.png" alt="With supervised fine-tuning, ViNumQA training set" width="480">
+
+`train (%)` / `val (%)`: how much of the original ViNumQA train/valid split
+the reasoning-trace training set actually covers (rows without a verified
+distilled trace are dropped for the PA-match-only/STaNR rows, so these are
+below 100% — only the no-reasoning baseline trains on every sample).
+`STaNR_v1` here self-distills each model from its own SFT-w-ENG-trace
+checkpoint (see Methodology §4); qwen3-4b-thinking's row uses majority-of-5
+voting on the self-distillation step, the other two use a single generation
+per sample.
+
+### Fine-tuned — ViNumQA + FinQA combined training set
+
+<img src="img/sft-combined.png" alt="With supervised fine-tuning, ViNumQA + FinQA combined training set" width="480">
+
+Same setup, but both the teacher-verified pool and the STaNR self-distillation
+candidate pool (teacher-failed samples) are drawn from ViNumQA **and** FinQA
+together, reformatted to a shared schema (`datasets/FinQA/formating_datasets.ipynb`).
+VIE-trace and PA/partial-match variants were dropped from this table — prior
+experiments (above) already showed ENG trace outperforms VIE, and PA/partial
+match risks training on a trace that doesn't match its own program's exact
+surface form. qwen3-4b-thinking's STaNR row and Gemma3-4B's PA/EA are still
+running as of this writing.
+
+PA/EA are computed with the shared evaluator in `notebooks/evaluate/scorer.py`
+(sympy-based symbolic Program Accuracy, table-row-lookup-aware Execution
+Accuracy, ported from the official FinQA evaluation protocol), so all rows
+in both tables are directly comparable — including across tables, since the
+evaluation set (`test.json`) is identical in both.
 
 ## Running the notebooks
 
@@ -181,8 +230,10 @@ root or the notebook's own folder without path edits.
 - **Batch API notebooks** (`*-gpt5nano-batch.ipynb`): need `OPENAI_API_KEY`
   (a real OpenAI account key — Batch API is not available on third-party
   proxy endpoints).
-- **Local-model notebooks** (Qwen3-4B, Qwen3-Next-80B): designed to run on
-  Kaggle (Qwen3-4B, free T4/P100 tier) or Modal (Qwen3-Next-80B, needs
+- **Local-model notebooks** (Qwen3-4B, Qwen3-4B-Thinking-2507, Gemma3-4B,
+  Qwen3-Next-80B): designed to run on Kaggle (free T4/P100 tier, 12h session
+  limit — train/eval are split into separate notebooks where a combined run
+  would exceed it) or Modal (`-modal.ipynb` variants; Qwen3-Next-80B needs
   ≥160GB VRAM — see the trace-gen notebook's intro cell for the specific GPU
   config and vLLM flags needed on Blackwell-generation GPUs).
 
