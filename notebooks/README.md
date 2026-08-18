@@ -9,7 +9,8 @@ vinumqa/
 ├── translate-reasoning-trace/       (abandoned) MT-based trace translation
 ├── sft-wo-reasoning-trace-distill/  QLoRA SFT, program-only labels (baseline)
 ├── sft-w-reasoning-trace-distill/   QLoRA SFT, distilled-reasoning-trace labels
-└── sft-grpo/                        (planned) SFT + GRPO policy optimization
+├── sft-grpo/                        (planned) SFT + GRPO policy optimization
+└── graph-agent/                     MPR-Agent: inference-only multi-agent pipeline (no training)
 evaluate/                            shared PA/EA scorer (scorer.py) — read this first
 translated-finqa/                    (placeholder) planned baselines on translated-FinQA
 ```
