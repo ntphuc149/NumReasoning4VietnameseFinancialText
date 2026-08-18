@@ -190,6 +190,26 @@ here. `AgentConfig.max_workers_*` accordingly has no effect when every
 `model_*` names a local model; that is the expected tradeoff for one GPU, not
 a bug.
 
+`num_return_sequences=n` needs every sequence's KV cache in VRAM at once, and
+that scales with both `n` and prompt length — a real Kaggle T4 (14.56 GB) run
+OOM'd at `n=15` on the planner's ~4-5k token prompt. `LocalBackend` retries
+automatically at half the batch size on OOM (down to 1), so a run always
+finishes, but each halving costs a wasted `generate()` call first. On a GPU
+already known to be tight, set `AgentConfig.local_max_batch_size` to skip
+straight to a smaller starting batch instead — `mpr-agent.ipynb`'s Kaggle
+cells set this to `4`. Leave it `None` (the default) on a roomier GPU, e.g.
+Modal's A100-80GB.
+
+**Dual-GPU (Kaggle "GPU T4 x2")**: `mpr-agent.ipynb` has an optional section
+that runs two independent subprocesses, one pinned to each physical GPU via
+`CUDA_VISIBLE_DEVICES`, each processing half of `test.json` through its own
+`Runner` (so each half also gets its own checkpoint/resume, independently of
+the other GPU), then merges both halves' scored CSVs before printing PA/EA.
+Same subprocess-per-GPU pattern this repo's
+`sft-w-reasoning-trace-distill/qwen3-4b-eval-only-dual-gpu.ipynb` already
+uses. Roughly halves wall-clock; use it *instead of* the single-GPU run cell,
+not alongside it.
+
 ---
 
 ## Ablation & prompt-fidelity results

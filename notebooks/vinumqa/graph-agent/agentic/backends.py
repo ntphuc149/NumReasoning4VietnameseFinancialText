@@ -192,11 +192,13 @@ class LocalBackend:
     DEFAULT_MAX_SEQ_LENGTH = 8192
 
     def __init__(self, name: str, spec: LocalModelSpec, config: AgentConfig,
-                 max_seq_length: int = DEFAULT_MAX_SEQ_LENGTH):
+                 max_seq_length: int = DEFAULT_MAX_SEQ_LENGTH,
+                 max_batch_size: Optional[int] = None):
         self.name = name
         self.spec = spec
         self.config = config
         self.max_seq_length = max_seq_length
+        self.max_batch_size = max_batch_size
         self.usage = Usage()
         self._lock = threading.Lock()
         self._model = None
@@ -271,7 +273,10 @@ class LocalBackend:
 
         texts: list[str] = []
         remaining = n
-        batch_size = n  # optimistic: try the whole thing in one call first
+        # Optimistic (try the whole thing in one call) unless the caller has
+        # already told us a smaller size is known-safer for this GPU -- see
+        # AgentConfig.local_max_batch_size.
+        batch_size = n if self.max_batch_size is None else min(n, self.max_batch_size)
         while remaining > 0:
             this_batch = min(batch_size, remaining)
             gen_kwargs = dict(base_kwargs)
@@ -383,7 +388,10 @@ class MultiModelClient:
             with self._lock:
                 backend = self._local_backends.get(model)
                 if backend is None:
-                    backend = LocalBackend(model, spec, self.config)
+                    backend = LocalBackend(
+                        model, spec, self.config,
+                        max_batch_size=self.config.local_max_batch_size,
+                    )
                     self._local_backends[model] = backend
         return backend
 

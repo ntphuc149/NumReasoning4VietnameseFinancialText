@@ -88,6 +88,21 @@ def test_multi_model_client_does_not_require_api_credentials_for_local_only_use(
     assert client._api_backend is None  # API client never constructed
 
 
+def test_local_max_batch_size_defaults_to_none():
+    """Unset -> LocalBackend's own optimistic batch_size=n behaviour, unchanged."""
+    client = MultiModelClient(AgentConfig())
+    backend = client._backend_for("Qwen3-4B")
+    assert backend.max_batch_size is None
+
+
+def test_local_max_batch_size_is_threaded_from_config_to_the_backend():
+    """Kaggle-T4 knob: config.local_max_batch_size must reach the LocalBackend
+    that actually does the n-sampling generate() call, not just sit unused."""
+    client = MultiModelClient(AgentConfig(local_max_batch_size=4))
+    backend = client._backend_for("Qwen3-4B")
+    assert backend.max_batch_size == 4
+
+
 def test_multi_model_client_usage_aggregates_across_backends():
     client = MultiModelClient(AgentConfig())
     backend = client._backend_for("Qwen3-4B")

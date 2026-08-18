@@ -104,6 +104,18 @@ class AgentConfig:
     # certainty, so every degradation path still emits something.
     use_direct_prompt_fallback: bool = True
 
+    # --------------------------------------------------------- local GPU only --
+    # LocalBackend's n-sampling starts optimistically at batch_size=n and only
+    # backs off after an actual CUDA OOM (see backends.py's adaptive retry).
+    # That is correct but wasteful on a GPU already known to be tight (a
+    # Kaggle T4 OOM'd at n=15 on a ~4-5k token planner prompt, confirmed by a
+    # real run) -- every sample pays for at least one failed generate() call
+    # before finding a size that fits. Set this to skip straight to a smaller
+    # starting batch instead of discovering it by OOMing every time. None (the
+    # default) keeps the optimistic behaviour, correct for a GPU with more
+    # headroom (e.g. Modal's A100-80GB).
+    local_max_batch_size: Optional[int] = None
+
     # ------------------------------------------------ concurrency / retries --
     max_workers_subquery: int = 5    # fan-out within one sample (A_sq)
     max_workers_sample: int = 15     # client-side n-sampling fan-out
