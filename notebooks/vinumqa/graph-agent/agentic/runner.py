@@ -22,9 +22,9 @@ from typing import Any, Callable, Iterable, Optional
 import pandas as pd
 
 from agentic.agents import AgentGraph, AgentState, build_default_graph
+from agentic.backends import MultiModelClient
 from agentic.config import AgentConfig, RunConfig
 from agentic.llm import (
-    LLMClient,
     format_context,
     format_post_text,
     format_pre_text,
@@ -57,11 +57,17 @@ def build_state(sample: dict, lang: str = "vi") -> AgentState:
 
 
 class Runner:
-    def __init__(self, run_config: RunConfig, client: Optional[LLMClient] = None,
+    def __init__(self, run_config: RunConfig, client: Optional[MultiModelClient] = None,
                  graph: Optional[AgentGraph] = None):
         self.run_config = run_config
         self.config: AgentConfig = run_config.agent
-        self.client = client or LLMClient(self.config)
+        # MultiModelClient, not LLMClient directly: it routes each of the four
+        # model_* fields to whichever backend actually serves that name (see
+        # backends.py) -- local transformers.generate() for the three models
+        # this repo trains, the API client for everything else -- so a Runner
+        # never has to know or care which of the eleven baseline models it
+        # was configured with.
+        self.client = client or MultiModelClient(self.config)
         self.graph = graph or build_default_graph(self.client, self.config)
         self._lock = threading.Lock()
         self._results: dict[str, dict] = {}
@@ -95,7 +101,18 @@ class Runner:
 
     # ------------------------------------------------------------------ run --
     def run(self, samples: Optional[Iterable[dict]] = None,
-            on_result: Optional[Callable[[dict], None]] = None) -> pd.DataFrame:
+            on_result: Optional[Callable[[dict], None]] = None,
+            show_progress: bool = False) -> pd.DataFrame:
+        """Run every sample not already in the checkpoint.
+
+        `show_progress=True` prints how far the run has actually gotten as it
+        goes -- a `tqdm` bar if it is importable, a periodic count otherwise
+        -- instead of the previous silent block-until-done. Measured need:
+        this pipeline's own per-sample time varies by more than an order of
+        magnitude on a reasoning model (6s to 220s for one node alone, seen
+        on a real DeepSeek-V4-Flash smoke run), so "no output yet" and "done
+        in a minute" are not distinguishable without this.
+        """
         data = list(samples) if samples is not None else load_dataset(
             self.run_config.dataset_path, self.run_config.limit
         )
@@ -104,7 +121,17 @@ class Runner:
         todo = [s for s in data if str(s.get("id", "")) not in self._results]
         print(f"{len(data)} sample(s) total, {len(todo)} to run.")
 
+        progress = None
+        if show_progress and todo:
+            try:
+                from tqdm import tqdm
+                progress = tqdm(total=len(todo), desc=self.run_config.run_name, unit="sample")
+            except ImportError:
+                print("show_progress=True but tqdm is not installed -- "
+                      "install it for a live bar; falling back to periodic counts.")
+
         done_since_save = 0
+        n_errors = 0
         if todo:
             workers = min(self.config.max_workers_dataset, len(todo))
             with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -122,15 +149,29 @@ class Runner:
                             "answer": None,
                             "errors": [f"runner: {type(exc).__name__}: {exc}"],
                         }
+                    if record.get("errors"):
+                        n_errors += 1
                     with self._lock:
                         self._results[record["id"]] = record
                         done_since_save += 1
                         if done_since_save >= self.run_config.checkpoint_every:
                             self._save_checkpoint()
                             done_since_save = 0
+                    done_total = len(self._results)
+                    if progress is not None:
+                        progress.set_postfix(errors=n_errors)
+                        progress.update(1)
+                    elif show_progress and (
+                        done_total % 5 == 0 or done_total == len(data)
+                    ):
+                        # Periodic, not per-sample: 497 print lines would be its
+                        # own kind of noise. Every 5th completion plus the last.
+                        print(f"  {done_total}/{len(data)} done ({n_errors} with errors so far)")
                     if on_result is not None:
                         on_result(record)
             self._save_checkpoint()
+            if progress is not None:
+                progress.close()
 
         return self.to_dataframe(data)
 

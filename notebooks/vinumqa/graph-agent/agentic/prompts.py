@@ -259,6 +259,16 @@ def get(lang: str = "vi") -> PromptSet:
 #   `greater` occurs 0 times in train and once in test -- so the paper's eight
 #   already cover 496/497 test samples. Enabling this buys at most one sample and
 #   widens the space of malformed programs the planner can emit.
+#
+# PLACEHOLDER_CLARIFICATION targets a real failure measured on a 30-sample
+# DeepSeek-V4-Flash smoke run (2026-08-17): 18 of 450 candidates (4%) died at
+# transpile with `argument is not numeric: 'giá_trị_mới'` (or 'new' /
+# 'giá trị mới') -- the planner echoing back planner_part1's own worked
+# example verbatim, `subtract(a='giá_trị_mới', b='giá_trị_cũ')`, instead of
+# substituting the real numbers the example's placeholder names stand for.
+# The paper's own prompt (verbatim, Appendix B.7/B.8) never says these two
+# words are placeholders rather than literal arguments -- this bullet is the
+# one-sentence fix, same shape as PERCENT_AS_DECIMAL below.
 
 PERCENT_AS_DECIMAL_VI = """• PHẦN TRĂM DÙNG NHƯ TỶ LỆ: Khi một giá trị phần trăm (ví dụ, '15.9%') được dùng làm tỷ lệ trong phép nhân hoặc phép chia, hãy viết THẲNG giá trị thập phân tương ứng làm hằng số (ví dụ, '0.159'). KHÔNG tạo thêm một bước divide cho '100'."""
 
@@ -272,12 +282,20 @@ EXTRA_OPERATORS_EN = """• Two additional tools, to be used only when genuinely
 – exp(a: str, b: str) -> float: Exponentiation, a to the power of b.
 – greater(a: str, b: str) -> str: Returns 'yes' if a > b, otherwise 'no'."""
 
+PLACEHOLDER_CLARIFICATION_VI = """• LÀM RÕ VÍ DỤ THỨ TỰ PHÉP TRỪ: 'giá_trị_mới' và 'giá_trị_cũ' trong ví dụ subtract(a='giá_trị_mới', b='giá_trị_cũ') CHỈ LÀ TÊN MINH HỌA cho thứ tự tham số, KHÔNG PHẢI giá trị cần viết ra. Bạn PHẢI thay hai tên đó bằng SỐ THẬT lấy từ ngữ cảnh hoặc câu trả lời truy vấn con (ví dụ đúng: subtract(a='96.67', b='100')). TUYỆT ĐỐI KHÔNG được viết nguyên văn 'giá_trị_mới', 'giá_trị_cũ', 'new', hay 'old' làm tham số."""
+
+PLACEHOLDER_CLARIFICATION_EN = """• CLARIFYING THE SUBTRACTION-ORDER EXAMPLE: 'new_value' and 'old_value' in subtract(a='new_value', b='old_value') are ONLY placeholder names showing the argument ORDER, NOT values to write out. You MUST replace them with the ACTUAL NUMBERS from the context or subquery answers (correct example: subtract(a='96.67', b='100')). NEVER write the literal words 'new_value', 'old_value', 'new', or 'old' as an argument."""
+
 
 def planner_extension(lang: str = "vi") -> str:
     """Extra bullets appended to the planner's Part 2 instructions."""
     if lang == "vi":
-        return "\n".join([PERCENT_AS_DECIMAL_VI, EXTRA_OPERATORS_VI])
-    return "\n".join([PERCENT_AS_DECIMAL_EN, EXTRA_OPERATORS_EN])
+        return "\n".join([
+            PERCENT_AS_DECIMAL_VI, EXTRA_OPERATORS_VI, PLACEHOLDER_CLARIFICATION_VI,
+        ])
+    return "\n".join([
+        PERCENT_AS_DECIMAL_EN, EXTRA_OPERATORS_EN, PLACEHOLDER_CLARIFICATION_EN,
+    ])
 
 
 # =============================================================================

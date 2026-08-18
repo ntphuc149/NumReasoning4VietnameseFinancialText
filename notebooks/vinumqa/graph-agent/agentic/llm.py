@@ -117,10 +117,38 @@ def table_row_labels(table: Sequence[Sequence[str]] | None) -> set[str]:
 # prompting notebooks.
 _REASONING_KEYWORDS = ("r1", "thinking", "reasoner", "qwq", "o1", "o3", "reasoning")
 
+# Confirmed by this repo's own baseline notebooks against the REAL endpoint --
+# not name-guessed. Both are on this package's own 11-model baseline list.
+#   * DeepSeek-V4-Flash: notebooks/vinumqa/0-shot/
+#     vsf-0-shot-vinumqa-deepseek-v4-flash.ipynb forces IS_REASONING=True for
+#     it specifically, discovered after a real run crashed with content=None
+#     at sample 483 -- its name matches none of _REASONING_KEYWORDS above.
+#   * GLM-5.2: notebooks/vinumqa/few-shot/vsf-few-shot-vinumqa-glm5.2-rate-
+#     check.ipynb dumped a raw response and found a populated
+#     reasoning_content field.
+# is_reasoning_model() checks this set FIRST, so a model matching neither this
+# set nor the keyword heuristic (the common case) costs one dict lookup, not a
+# live probe.
+KNOWN_REASONING_MODELS = frozenset({"DeepSeek-V4-Flash", "GLM-5.2"})
+
 
 def is_reasoning_model(model_name: str) -> bool:
+    if model_name in KNOWN_REASONING_MODELS:
+        return True
     name = model_name.lower()
     return any(kw in name for kw in _REASONING_KEYWORDS)
+
+
+# Floor for a reasoning model's FIRST attempt, so it does not have to pay for
+# one guaranteed-too-small round trip before _call()'s escalation kicks in.
+# 2048 rather than the 8192 the 0-shot baseline notebooks use flat: those
+# notebooks send one long direct-prompt per sample and never revisit the
+# number; this package's four nodes have much shorter prompts (see
+# backends.py's LocalBackend docstring for the measured planner-prompt
+# lengths), and escalation still reaches 8192 (2048 x 2 x 2) if a harder
+# sample's reasoning genuinely needs it -- this floor only removes the
+# common-case first miss, not the ceiling.
+REASONING_MODEL_MIN_TOKENS = 2048
 
 
 class LLMError(RuntimeError):
@@ -310,7 +338,26 @@ class LLMClient:
     def _call(self, messages: list[dict], model: str, max_tokens: int,
               temperature: Optional[float], n: Optional[int]) -> list[str]:
         cfg = self.config
-        estimate = sum(len(m.get("content", "")) for m in messages) // 4 + max_tokens
+        # Grows, not fixed: see the reasoning-starvation handling below. Kept
+        # local to this call, not written back to cfg, so a node's normal
+        # budget for every OTHER call is untouched -- only a call that
+        # actually hits the wall pays for a bigger one.
+        effective_max_tokens = max_tokens
+        if is_reasoning_model(model) and effective_max_tokens < REASONING_MODEL_MIN_TOKENS:
+            effective_max_tokens = REASONING_MODEL_MIN_TOKENS
+        # A reasoning model can spend its whole token budget on hidden
+        # chain-of-thought and never reach the answer. Measured directly on
+        # this exact planner prompt against DeepSeek-V4-Flash at the default
+        # max_tokens_planner=768: 728 of 768 completion tokens went to
+        # reasoning_content, leaving 69 characters for the plan -- one bad
+        # question away from empty. Retrying at the SAME max_tokens would hit
+        # the identical wall every time (this is not a transient failure),
+        # burning cfg.max_retries attempts -- and their reasoning tokens --
+        # for a guaranteed LLMError. Doubling the budget when that exact
+        # signature (empty content, non-empty reasoning_content) appears is
+        # cheaper and actually has a chance of succeeding.
+        reasoning_escalations = 0
+        MAX_REASONING_ESCALATIONS = 2  # budget may grow to at most 4x the caller's request
         last_error: Exception | None = None
         # Content that arrived but was cut off at max_tokens. Preferred over
         # nothing: an instruct model that overruns its budget usually emits the
@@ -319,12 +366,16 @@ class LLMClient:
         truncated: list[str] = []
 
         for attempt in range(1, cfg.max_retries + 1):
+            estimate = (
+                sum(len(m.get("content", "")) for m in messages) // 4
+                + effective_max_tokens
+            )
             self.limiter.wait_if_needed(estimate)
             try:
                 response = self.client.chat.completions.create(
                     model=model,
                     messages=messages,
-                    **self._build_kwargs(max_tokens, temperature, n),
+                    **self._build_kwargs(effective_max_tokens, temperature, n),
                 )
             except Exception as exc:  # noqa: BLE001 - transport errors are varied
                 last_error = exc
@@ -353,11 +404,19 @@ class LLMClient:
             self.limiter.record(total or estimate)
 
             outputs = []
+            reasoning_starved = False
             for choice in response.choices:
                 content = self._content(choice)
                 if not content:
-                    # A reasoning model can spend its whole budget on hidden
-                    # chain-of-thought and be cut off before emitting anything.
+                    # Distinguish "cut off mid chain-of-thought" (worth a
+                    # bigger budget) from "the model just returned nothing"
+                    # (a bigger budget would not help): the former leaves a
+                    # non-empty reasoning_content behind, the API's own
+                    # signal that generation was still inside the hidden
+                    # trace when max_tokens ran out.
+                    message = getattr(choice, "message", None)
+                    if getattr(message, "reasoning_content", None):
+                        reasoning_starved = True
                     continue
                 if getattr(choice, "finish_reason", None) == "length":
                     truncated.append(content)
@@ -365,6 +424,11 @@ class LLMClient:
                     outputs.append(content)
             if outputs:
                 return outputs
+
+            if reasoning_starved and reasoning_escalations < MAX_REASONING_ESCALATIONS:
+                reasoning_escalations += 1
+                effective_max_tokens *= 2
+                continue  # not a rate limit or transient error -- no sleep needed
 
             if attempt < cfg.max_retries:
                 time.sleep(cfg.retry_base_delay * attempt)

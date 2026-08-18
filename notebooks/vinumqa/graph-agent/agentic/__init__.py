@@ -9,12 +9,15 @@ targeting this repository's ViNumQA program format and shared PA/EA scorer.
                      [3] Planner        P_n-sample(...) -> n candidate plans
                          [4] EquationExtractor  vote -> p* -> a*
 
-Eight modules, one job each:
+Nine modules, one job each:
 
     config    AgentConfig / RunConfig -- every knob, marked paper's or ours
     scoring   the ONE bridge to notebooks/evaluate/scorer.py (never a copy)
     prompts   Appendix B verbatim (VI + EN), opt-in patches, fallback prompt
-    llm       context formatting + OpenAI-compatible client
+    llm       context formatting + the OpenAI-compatible transport
+    backends  routes each model_* name to the transport that actually serves
+              it -- local transformers.generate() for the 3 models this repo
+              trains, the API client for the other 8 baseline models
     program   plan DSL -> PlanGraph -> ViNumQA program -> vote
     agents    AgentState, the four nodes, the pipeline graph
     runner    batch run, checkpoint/resume, scoring, oracle@n, offline re-vote
@@ -35,6 +38,13 @@ from agentic.agents import (
     SubqueryGenerator,
     build_default_graph,
 )
+from agentic.backends import (
+    API_MODELS,
+    MODEL_REGISTRY,
+    LocalBackend,
+    MultiModelClient,
+    describe_backend,
+)
 from agentic.config import AgentConfig, RunConfig
 from agentic.llm import LLMClient, LLMError, RateLimiter
 from agentic.program import (
@@ -50,6 +60,7 @@ from agentic.program import (
 from agentic.runner import Runner, candidate_diagnostics, load_dataset, revote
 
 __all__ = [
+    "API_MODELS",
     "AgentConfig",
     "AgentGraph",
     "AgentState",
@@ -57,6 +68,9 @@ __all__ = [
     "EquationExtractor",
     "LLMClient",
     "LLMError",
+    "LocalBackend",
+    "MODEL_REGISTRY",
+    "MultiModelClient",
     "Node",
     "NodeTrace",
     "PlanGraph",
@@ -71,6 +85,7 @@ __all__ = [
     "build_default_graph",
     "canonicalize",
     "candidate_diagnostics",
+    "describe_backend",
     "load_dataset",
     "parse_plan",
     "plan_text_to_program",

@@ -7,8 +7,8 @@ the system that **won Subtask 2 of this shared task with EA 84.00%**.
 
 ```
 graph-agent/
-├── agentic/                          the pipeline (8 modules)
-├── tests/test_agentic.py             53 tests, no API calls
+├── agentic/                          the pipeline (9 modules)
+├── tests/                            78 tests, no API calls, no GPU
 ├── mpr-agent-gemma-4-31b-it.ipynb    driver: smoke → full → ablation → A/B
 └── outputs/                          traces, per-sample CSV, summaries (gitignored)
 ```
@@ -96,9 +96,92 @@ n=15 — hence n=15, since PA is the primary metric.
 | `scoring.py` | The one bridge to `notebooks/evaluate/scorer.py` — loaded by path, never copied |
 | `prompts.py` | Appendix B verbatim (VI + EN), opt-in patches, fallback prompt |
 | `llm.py` | Context formatting (`C`) + OpenAI-compatible client, rate limiter, `n` probe |
+| `backends.py` | Routes each `model_*` name to local `transformers.generate()` or the API client |
 | `program.py` | plan DSL → `PlanGraph` → ViNumQA program → vote |
 | `agents.py` | `AgentState`, the four nodes, the pipeline graph |
 | `runner.py` | Batch run, checkpoint/resume, scoring, oracle@n, offline re-vote |
+
+---
+
+## Running on any of this repo's eleven baseline models
+
+The paper runs one model (Qwen3-8B / Qwen3-32B) through one transport it
+controls end to end. This repo's own baseline suite is eleven models across
+two very different transports — three it fine-tunes and runs locally
+(`Qwen3-4B`, `qwen3-4b-thinking`, `Gemma3-4B`, loaded the same way
+`notebooks/vinumqa/0-shot/vsf-vinumqa-0-shot-{qwen3-4b,gemma3-4b}.ipynb`
+already do, with plain `transformers`, no Unsloth — that wrapper is for
+training, and this package never trains anything) and eight it only ever
+reaches through the hosted OpenAI-compatible endpoint already configured in
+`.env` (`gemma-3-27b-it`, `gemma-4-31B-it`, `gpt-oss-20b`, `gpt-oss-120b`,
+`Llama-3.3-70B-Instruct`, `DeepSeek-V4-Flash`, `GLM-5.2`, `gpt-5-nano`).
+
+`backends.MultiModelClient` is what `Runner` actually constructs. It looks at
+the `model` argument on every call and routes to whichever backend serves that
+name — `backends.LocalBackend` (local) or `llm.LLMClient` (API), both built
+lazily so a local-only run never needs `API_KEY`/`BASE_URL` and an API-only
+run never touches a GPU. Every node in `agents.py` still just calls
+`self.client.complete(...)` / `self.client.sample_n(...)`; nothing there, or
+in `runner.py` beyond the one line that constructs the client, changed.
+
+```python
+MODEL = "Qwen3-4B"                    # -> LocalBackend, needs a GPU in this kernel
+MODEL = "gemma-4-31B-it"              # -> LLMClient (API), needs .env
+agent_config = AgentConfig(
+    model_subquery_gen=MODEL, model_subquery_ans=MODEL,
+    model_planner=MODEL, model_fallback=MODEL,
+)
+```
+
+Nothing stops the four `model_*` fields naming different models — a small
+local model on the two cheap extraction nodes and a large API model on the
+planner, say. `describe_backend(name)` reports which way any given name
+routes; `backends.MODEL_REGISTRY` is the three local names, `backends.
+API_MODELS` documents (but does not gate) the other eight — a model the
+endpoint serves under a name not in that list still falls through to the API
+backend rather than erroring.
+
+**Reasoning-model token budgets (API path)**: `DeepSeek-V4-Flash` and `GLM-5.2`
+are confirmed reasoning models -- not name-guessed, established by this repo's
+own baseline notebooks against the real endpoint
+(`notebooks/vinumqa/0-shot/vsf-0-shot-vinumqa-deepseek-v4-flash.ipynb` forces
+this for DeepSeek-V4-Flash after a real run crashed with `content=None` at
+sample 483; `notebooks/vinumqa/few-shot/vsf-few-shot-vinumqa-glm5.2-rate-
+check.ipynb` dumped a raw response and found a populated `reasoning_content`
+field for GLM-5.2). Measured directly against this package's own planner
+prompt: DeepSeek-V4-Flash spent 728 of a 768-token budget on hidden
+`reasoning_content`, leaving 69 characters for the actual plan -- one harder
+question away from empty. `llm.py` handles this two ways, so nothing in
+`agentic/config.py`'s per-node `max_tokens_*` needs to change to use either
+model: `is_reasoning_model()` checks `KNOWN_REASONING_MODELS` (this confirmed
+set) before falling back to a name-keyword heuristic for unlisted models, and
+`_call()` (a) starts a reasoning model's first request at
+`REASONING_MODEL_MIN_TOKENS=2048` regardless of the caller's smaller default,
+and (b) doubles the budget (capped at 4x) if a response still comes back with
+non-empty `reasoning_content` but empty `content` -- the exact signature of
+"ran out of room mid-thought," distinct from an empty response for some other
+reason, which is not retried at a larger budget.
+
+GLM-5.2 also has a **known rate limit** on this endpoint (measured in the
+rate-check notebook above): RPM=50, TPM=100,000, with TPM binding first. Not
+auto-applied here (`AgentConfig.rpm_limit`/`tpm_limit` default to `None` --
+this package's own request pattern and concurrency differ from that
+notebook's, so the same numbers are a starting point to set explicitly, not
+assumed correct unmeasured for this pipeline):
+`AgentConfig(rpm_limit=50, tpm_limit=100_000)`.
+
+**LocalBackend specifics** (see the class docstring for the full reasoning):
+`num_return_sequences=n` does the paper's n-sampling in one `generate()` call
+rather than n separate ones, matching the eval notebooks' own choice; a
+`qwen3-4b-thinking` output is sliced at its own final `</think>` token, the
+same slicing and the same `QWEN3_THINK_END_TOKEN_ID` constant those notebooks
+already use; and every actual `generate()` call is serialised behind a lock,
+because a single GPU cannot run two at once and `agents.py` fans out over
+subqueries and over n-samples with a `ThreadPoolExecutor` — correct for an API
+backend, and would corrupt a local model's forward pass if not serialised
+here. `AgentConfig.max_workers_*` accordingly has no effect when every
+`model_*` names a local model; that is the expected tradeoff for one GPU, not
+a bug.
 
 ---
 
