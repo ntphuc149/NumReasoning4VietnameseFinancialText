@@ -200,6 +200,15 @@ Turing-generation GPUs (Kaggle's T4, compute capability 7.5) have no native
 bf16 tensor cores -- measured cause of a real run being ~20-30 min/sample
 instead of the expected tens of seconds.
 
+`_generate()` frees the raw `generate()` output (`del out, gen_only;
+torch.cuda.empty_cache()`) after every single call, not only on the OOM
+path. A 497-sample run makes hundreds of these calls back to back in one
+long-lived process (n=15 per sample at `batch_size=1` is 15 of them per
+sample alone) -- measured on a real run: without this, GPU memory climbed
+call over call until a *later* sample OOM'd at `batch_size=1` (previously
+assumed always safe, since it is the smallest size there is) even though
+earlier samples at that same batch size had generated fine.
+
 `num_return_sequences=n` needs every sequence's KV cache in VRAM at once, and
 that scales with both `n` and prompt length — a real Kaggle T4 (14.56 GB) run
 OOM'd at `n=15` on the planner's ~3.9k token prompt, and follow-up runs showed

@@ -327,6 +327,18 @@ class LocalBackend:
                 texts.extend(tokenizer.decode(g, skip_special_tokens=True).strip() for g in gen_only)
             remaining -= this_batch
 
+            # Not just on the OOM path: a long-lived process makes hundreds of
+            # these calls back to back (one per sample in a 497-sample run,
+            # n=15 of them each at batch_size=1), and `out` is never small --
+            # it holds prompt_len + max_new_tokens per sequence. Measured on a
+            # real run: GPU memory climbed call over call until a LATER sample
+            # OOM'd at batch=1 (the smallest possible, previously assumed
+            # always safe) even though earlier samples at the same batch size
+            # had succeeded fine. Free it immediately rather than leaving it
+            # to whenever Python's GC happens to collect `out`/`gen_only`.
+            del out, gen_only
+            torch.cuda.empty_cache()
+
         return texts
 
     # --------------------------------------------------------------- public --
