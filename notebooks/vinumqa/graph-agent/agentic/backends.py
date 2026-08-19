@@ -214,12 +214,21 @@ class LocalBackend:
             # Imported here, not at module level: the offline test suite and
             # any run that only uses API models must not require torch/
             # transformers (or a GPU) to be installed at all.
+            import torch
             from transformers import AutoModelForCausalLM, AutoTokenizer
 
-            print(f"LocalBackend: loading {self.spec.repo} for {self.name!r} ...")
+            # NOT torch_dtype="auto": that reads the checkpoint's own preferred
+            # dtype, which for Qwen3 is bfloat16 -- fine on Ampere+ (Modal's
+            # A100), but a Turing-generation GPU (Kaggle's T4) has no native
+            # bf16 tensor cores, so bf16 ops fall back to a much slower path.
+            # Measured cause of a real run being ~20 min/sample instead of the
+            # expected tens of seconds. Pick whichever dtype this GPU actually
+            # has hardware support for.
+            dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+            print(f"LocalBackend: loading {self.spec.repo} for {self.name!r} (dtype={dtype}) ...")
             self._tokenizer = AutoTokenizer.from_pretrained(self.spec.repo)
             self._model = AutoModelForCausalLM.from_pretrained(
-                self.spec.repo, torch_dtype="auto", device_map="cuda:0",
+                self.spec.repo, torch_dtype=dtype, device_map="cuda:0",
             )
             print(f"LocalBackend: {self.name!r} ready.")
 

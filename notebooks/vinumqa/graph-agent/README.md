@@ -190,6 +190,13 @@ here. `AgentConfig.max_workers_*` accordingly has no effect when every
 `model_*` names a local model; that is the expected tradeoff for one GPU, not
 a bug.
 
+Loads in whichever dtype this GPU actually has hardware support for
+(`torch.cuda.is_bf16_supported()`), not `torch_dtype="auto"` (the checkpoint's
+own preferred dtype). Qwen3 checkpoints default to bfloat16, fine on Ampere+
+(Modal's A100) but Turing-generation GPUs (Kaggle's T4) have no native bf16
+tensor cores -- measured cause of a real run being ~20 min/sample instead of
+the expected tens of seconds, before this was forced to fp16 on that GPU.
+
 `num_return_sequences=n` needs every sequence's KV cache in VRAM at once, and
 that scales with both `n` and prompt length — a real Kaggle T4 (14.56 GB) run
 OOM'd at `n=15` on the planner's ~3.9k token prompt, and follow-up runs showed
