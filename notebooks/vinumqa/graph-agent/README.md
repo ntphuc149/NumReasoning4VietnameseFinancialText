@@ -235,6 +235,50 @@ picks exactly one path instead of running the full single-GPU pass on 1 idle
 GPU first and only then reaching the parallel section (the failure mode this
 guards against, found on a real run).
 
+**`qwen3-4b-thinking` on Kaggle: use `mpr-agent-qwen3-4b-thinking-kaggle.ipynb`
+instead, not `mpr-agent.ipynb`'s local/dual-GPU path above.** Same `agentic/`
+package underneath (unmodified) and a `Backend`-protocol client passed to
+`Runner(client=...)`, but the transport is deliberately different for this one
+model:
+
+- **Loads with Unsloth in 4-bit** (`FastLanguageModel.from_pretrained(...,
+  load_in_4bit=True)`), the same call this repo's own
+  `qwen3-4b-thinking-2507-eval-only.ipynb`/`...-stf-w-reasoning-trace.ipynb`
+  already use for this exact checkpoint on Kaggle -- not `LocalBackend`'s
+  plain `transformers` fp16 load. ~3.2 GiB of weights instead of ~8 GiB frees
+  enough VRAM to sample in chunks (`SAMPLE_CHUNK`, starts at 3, steps down by
+  one -- not by half -- on OOM and stays there) instead of `LocalBackend`'s
+  forced `batch_size=1`.
+- **`THINK_HEADROOM` added on top of every one of the paper's four token
+  budgets**, not just the planner's. A thinking model spends its first
+  1-2k tokens inside `<think>` before ever writing an answer; a paper-sized
+  budget alone is spent entirely on the trace and the generation is cut off
+  before the plan exists, which scores 0 exactly like a wrong answer would
+  but is actually a budget bug.
+- **Clears the OOM's own traceback before reclaiming VRAM**
+  (`exc.__traceback__ = None`) -- a live traceback holds one frame per level
+  of `generate()`, and each frame holds its tensors, so `empty_cache()` taken
+  while the exception is still bound frees nothing.
+- **Single GPU only** (no dual-GPU section) -- the four points above address
+  the actual bottleneck (sequential, unbatched generation from being forced to
+  `batch_size=1`), which running two of the same slow thing in parallel does
+  not.
+
+Ships with its own smoke-run cell that measures real s/sample and projects the
+full 497-sample wall-clock **before** committing a session to it, and
+session-to-session resume for the runs this pipeline's token cost genuinely
+needs (multiple 12h Kaggle sessions even after the fixes above). Was written
+and reasoned through without GPU access, so — same as every other config on
+this page — treat its first real run as the actual verification, not this
+description.
+
+**Comparability**: this notebook's own default was `use_decomposition=True`
+(paper-faithful); changed to `use_decomposition=False` to match every other
+model's row in the table below and in the root README, since that is this
+repo's measured-best, actually-used default, not the paper's own choice.
+Flip it back only to deliberately reproduce the paper-faithful row, and label
+that result as such if you report it.
+
 ---
 
 ## Ablation & prompt-fidelity results
