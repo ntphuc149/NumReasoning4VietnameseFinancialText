@@ -190,12 +190,15 @@ here. `AgentConfig.max_workers_*` accordingly has no effect when every
 `model_*` names a local model; that is the expected tradeoff for one GPU, not
 a bug.
 
-Loads in whichever dtype this GPU actually has hardware support for
-(`torch.cuda.is_bf16_supported()`), not `torch_dtype="auto"` (the checkpoint's
-own preferred dtype). Qwen3 checkpoints default to bfloat16, fine on Ampere+
-(Modal's A100) but Turing-generation GPUs (Kaggle's T4) have no native bf16
-tensor cores -- measured cause of a real run being ~20 min/sample instead of
-the expected tens of seconds, before this was forced to fp16 on that GPU.
+Loads in whichever dtype this GPU actually has bf16 tensor cores for
+(compute capability >= 8.0, i.e. Ampere+), not `torch_dtype="auto"` (the
+checkpoint's own preferred dtype) and not `torch.cuda.is_bf16_supported()`
+(measured on a real T4: returns `True` there too -- it only checks that bf16
+ops run without erroring via a software fallback, not that they run fast).
+Qwen3 checkpoints default to bfloat16, fine on Ampere+ (Modal's A100) but
+Turing-generation GPUs (Kaggle's T4, compute capability 7.5) have no native
+bf16 tensor cores -- measured cause of a real run being ~20-30 min/sample
+instead of the expected tens of seconds.
 
 `num_return_sequences=n` needs every sequence's KV cache in VRAM at once, and
 that scales with both `n` and prompt length — a real Kaggle T4 (14.56 GB) run

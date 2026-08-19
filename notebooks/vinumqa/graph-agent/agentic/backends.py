@@ -221,10 +221,16 @@ class LocalBackend:
             # dtype, which for Qwen3 is bfloat16 -- fine on Ampere+ (Modal's
             # A100), but a Turing-generation GPU (Kaggle's T4) has no native
             # bf16 tensor cores, so bf16 ops fall back to a much slower path.
-            # Measured cause of a real run being ~20 min/sample instead of the
-            # expected tens of seconds. Pick whichever dtype this GPU actually
-            # has hardware support for.
-            dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+            # Measured cause of a real run being ~20-30 min/sample instead of
+            # the expected tens of seconds.
+            #
+            # NOT torch.cuda.is_bf16_supported() either -- measured on a real
+            # T4: it returns True there too (it only checks that bf16 ops run
+            # without erroring, via CUDA's software fallback when there is no
+            # tensor-core support, not that they run fast). Compute capability
+            # is the real signal: bf16 tensor cores start at Ampere (SM 8.0).
+            major, _minor = torch.cuda.get_device_capability()
+            dtype = torch.bfloat16 if major >= 8 else torch.float16
             print(f"LocalBackend: loading {self.spec.repo} for {self.name!r} (dtype={dtype}) ...")
             self._tokenizer = AutoTokenizer.from_pretrained(self.spec.repo)
             self._model = AutoModelForCausalLM.from_pretrained(
