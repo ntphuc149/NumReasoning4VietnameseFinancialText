@@ -235,8 +235,9 @@ picks exactly one path instead of running the full single-GPU pass on 1 idle
 GPU first and only then reaching the parallel section (the failure mode this
 guards against, found on a real run).
 
-**`qwen3-4b-thinking` on Kaggle: use `mpr-agent-qwen3-4b-thinking-kaggle.ipynb`
-instead, not `mpr-agent.ipynb`'s local/dual-GPU path above.** Same `agentic/`
+**`Qwen3-4B` / `qwen3-4b-thinking` on Kaggle: use `mpr-agent-qwen3-4b-kaggle.ipynb`
+/ `mpr-agent-qwen3-4b-thinking-kaggle.ipynb` instead, not `mpr-agent.ipynb`'s
+local/dual-GPU path above.** Same `agentic/`
 package underneath (unmodified) and a `Backend`-protocol client passed to
 `Runner(client=...)`, but the transport is deliberately different for this one
 model:
@@ -263,6 +264,16 @@ model:
   the actual bottleneck (sequential, unbatched generation from being forced to
   `batch_size=1`), which running two of the same slow thing in parallel does
   not.
+
+`mpr-agent-qwen3-4b-kaggle.ipynb` is the same notebook adapted for plain
+`Qwen3-4B` (no `-Thinking-2507`): same chunked backend, traceback-clearing OOM
+handling, and `use_decomposition=False` default, but no `THINK_HEADROOM` and no
+`</think>` slicing -- this model answers directly, so token budgets stay at the
+paper's own values. Measured cause of a real slowdown on the thinking sibling
+(~20-30 min/sample) does not apply here for the same reason a non-thinking
+model like `gemma-4-31B-it` never showed it: no reasoning trace competing for
+the token budget. Not yet measured on a real GPU either -- run its own
+smoke-run cell before committing a session.
 
 Ships with its own smoke-run cell that measures real s/sample and projects the
 full 497-sample wall-clock **before** committing a session to it, and
