@@ -170,3 +170,34 @@ Full Table 3 GRPO row, all three models (`img/sft-combined.png`), re-scored with
 Phúc, Hiếu, and Chi started scoping and designing the multi-agent stage (Sprint 3), reading Nguyen et al. (VNPT AI), "A Graph-Based Agent Approach to Numerical Reasoning Question Answering" (`papers/A Graph-Based Agent Approach to Numerical Reasoning Question.pdf`) — the VLSP 2025 Numerical Reasoning QA competition's top-performing system — as a design reference for our own multi-agent approach to this task. Implementation not started yet; still in the reading/design phase.
 
 Also drafted an outline for the final write-up, framed as a research paper using the ACL LaTeX template (rather than a plain project report), matching the venue style of the papers already reviewed for related work (FinQA, VLSP 2025 NumQA, PCPO).
+
+## 18/8/2026
+
+Started coding the multi-agent stage. Work done:
+
+- Wrote `agentic/backends.py` — a shared backend layer so the MPR-Agent pipeline runs on all 11 models (previously only `gemma-4-31B-it` over the API).
+- Fixed reasoning models (DeepSeek-V4-Flash, GLM-5.2) running out of tokens on hidden reasoning before ever answering — set a 2048-token floor, auto-double on truncation.
+- Fixed a prompt bug: the model often copied the paper's own example text instead of substituting real numbers (~4% of candidates affected).
+- Ran an ablation on DeepSeek-V4-Flash (497 samples): dropping the subquery-decomposition step (`use_decomposition=False`) beat the paper's full pipeline (PA 0.7787 vs 0.7505) — kept as the default.
+- First Kaggle T4 run of qwen3-4b-thinking OOM'd immediately — added an adaptive batch-size retry on OOM (15→7→3→1).
+- Merged this into `main` via PR.
+- Tried Modal (A100) for speed — lost all progress mid-run since the container doesn't persist state; ran out of Modal budget, back to Kaggle.
+- Added a dual-GPU mode for Kaggle, with a flag to avoid accidentally running only 1 GPU instead of 2.
+
+## 19/8/2026
+
+Real Kaggle runs surfaced and fixed 3 bugs:
+
+- The dual-GPU data-split cell ignored the sample `limit` — a small test run still processed the full 497 samples.
+- The model was loading in `bfloat16` even though the T4 GPU has no hardware support for it, making runs much slower. Fixed to pick the right dtype per GPU.
+- GPU memory leak: cleanup only ran on errors, not after successful runs, so memory filled up and eventually caused an OOM. Fixed to clean up after every run.
+
+All 3 fixes verified against real Kaggle logs, pushed to `chi`.
+
+## 20/8/2026
+
+All bugs fixed, but speed was still too slow (couldn't finish 1 sample in an hour). Measured real generation speed (13.65 tokens/sec) — confirmed this is a real T4 hardware limit, not a code bug.
+
+Looked at a teammate's notebook (Gemma3-4B on Unsloth 4-bit, finishes in ~10 hours) and applied the same technique to qwen3-4b-thinking — rewrote `mpr-agent-qwen3-4b-thinking-kaggle.ipynb`. Also added `mpr-agent-qwen3-4b-kaggle.ipynb` for plain Qwen3-4B (no "thinking" step, so faster). Both pushed to `chi`, not yet run to completion on real GPU.
+
+Put together this week's progress report (SFT vs SFT+GRPO comparison, Multi-Agent method and results).
