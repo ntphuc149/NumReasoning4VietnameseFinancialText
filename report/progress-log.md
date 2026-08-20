@@ -173,31 +173,29 @@ Also drafted an outline for the final write-up, framed as a research paper using
 
 ## 18/8/2026
 
-Started coding the multi-agent stage. Work done:
+The team moved from design into implementation on the multi-agent stage. Work done:
 
-- Wrote `agentic/backends.py` — a shared backend layer so the MPR-Agent pipeline runs on all 11 models (previously only `gemma-4-31B-it` over the API).
-- Fixed reasoning models (DeepSeek-V4-Flash, GLM-5.2) running out of tokens on hidden reasoning before ever answering — set a 2048-token floor, auto-double on truncation.
-- Fixed a prompt bug: the model often copied the paper's own example text instead of substituting real numbers (~4% of candidates affected).
-- Ran an ablation on DeepSeek-V4-Flash (497 samples): dropping the subquery-decomposition step (`use_decomposition=False`) beat the paper's full pipeline (PA 0.7787 vs 0.7505) — kept as the default.
-- First Kaggle T4 run of qwen3-4b-thinking OOM'd immediately — added an adaptive batch-size retry on OOM (15→7→3→1).
-- Merged this into `main` via PR.
-- Tried Modal (A100) for speed — lost all progress mid-run since the container doesn't persist state; ran out of Modal budget, back to Kaggle.
-- Added a dual-GPU mode for Kaggle, with a flag to avoid accidentally running only 1 GPU instead of 2.
+- Built a shared backend layer (`agentic/backends.py`) so the MPR-Agent pipeline can run against any of the project's 11 baseline models, not just `gemma-4-31B-it` over the API as before — each model is routed to either the API client or a local GPU backend depending on where it actually runs.
+- Fixed two bugs found while getting the first end-to-end runs working: reasoning models (DeepSeek-V4-Flash, GLM-5.2) were running out of their token budget on hidden reasoning before ever writing an answer (fixed with a 2048-token floor that auto-doubles if a response comes back empty); and the model frequently copied the paper's own worked example verbatim instead of substituting the question's real numbers (affected ~4% of candidates in a smoke test).
+- Ran a controlled ablation on DeepSeek-V4-Flash (full 497-sample test set): removing the subquery-decomposition step (`use_decomposition=False`) scored higher than the paper's full pipeline (PA 0.7787 vs 0.7505 EA), so this became the team's default configuration going forward.
+- Opened and merged the pipeline into `main` via PR.
+- First attempt to run `qwen3-4b-thinking` locally on a Kaggle T4 GPU ran out of memory immediately; added a retry that automatically shrinks the batch size on failure (15→7→3→1) instead of assuming one fixed size is always safe.
+- Tried moving the run to Modal (A100 GPU) for more speed, but the container doesn't keep state between sessions — a long run died partway through and all progress was lost. Ran out of Modal budget and decided to continue on Kaggle only.
+- Added a dual-GPU mode for Kaggle's two-T4 option, with a safety flag so the notebook can't be run in a way that only uses one of the two GPUs by mistake.
 
 ## 19/8/2026
 
-Real Kaggle runs surfaced and fixed 3 bugs:
+Running the pipeline for real on Kaggle surfaced three more bugs, all fixed and verified against real logs before pushing to `chi`:
 
-- The dual-GPU data-split cell ignored the sample `limit` — a small test run still processed the full 497 samples.
-- The model was loading in `bfloat16` even though the T4 GPU has no hardware support for it, making runs much slower. Fixed to pick the right dtype per GPU.
-- GPU memory leak: cleanup only ran on errors, not after successful runs, so memory filled up and eventually caused an OOM. Fixed to clean up after every run.
-
-All 3 fixes verified against real Kaggle logs, pushed to `chi`.
+- The dual-GPU setup was ignoring the sample-limit setting meant for quick test runs, so a "run only 5 samples" test was silently still processing the full 497.
+- The model was loading in a numeric precision (`bfloat16`) that Kaggle's T4 GPU has no hardware support for, which made every run far slower than it should be. Fixed to detect the GPU and choose a supported precision automatically.
+- A GPU memory leak: the code only freed memory after an error, never after a successful step, so memory usage climbed over a long run until it eventually crashed with an out-of-memory error. Fixed to free memory after every step.
 
 ## 20/8/2026
 
-All bugs fixed, but speed was still too slow (couldn't finish 1 sample in an hour). Measured real generation speed (13.65 tokens/sec) — confirmed this is a real T4 hardware limit, not a code bug.
+Even with the above fixes, the pipeline was still far too slow to finish a 497-sample run in any reasonable time — under an hour, it hadn't even completed one sample. To rule out a remaining bug, the team measured raw text-generation speed directly (13.65 tokens/second) and confirmed this is a genuine hardware limit of the Kaggle T4, not something fixable in code.
 
-Looked at a teammate's notebook (Gemma3-4B on Unsloth 4-bit, finishes in ~10 hours) and applied the same technique to qwen3-4b-thinking — rewrote `mpr-agent-qwen3-4b-thinking-kaggle.ipynb`. Also added `mpr-agent-qwen3-4b-kaggle.ipynb` for plain Qwen3-4B (no "thinking" step, so faster). Both pushed to `chi`, not yet run to completion on real GPU.
+Reviewed a teammate's separate notebook for a different model (Gemma3-4B, using a different loading technique — Unsloth in 4-bit precision — that finishes a full run in about 10 hours) and adapted the same technique for `qwen3-4b-thinking`, rewriting `mpr-agent-qwen3-4b-thinking-kaggle.ipynb`. Also built a second notebook, `mpr-agent-qwen3-4b-kaggle.ipynb`, for the plain (non-"thinking") version of Qwen3-4B, which is naturally faster since it doesn't spend extra time reasoning before each answer. Both notebooks are pushed to `chi`; neither has finished a full run on real hardware yet.
 
-Put together this week's progress report (SFT vs SFT+GRPO comparison, Multi-Agent method and results).
+Put together this week's status report for the team: a comparison of SFT vs SFT+GRPO results, and the Multi-Agent method with results collected so far.
+
