@@ -1,3 +1,4 @@
 openai>=1.0        # agentic/llm.py — client OpenAI-compatible
 pandas>=2.0        # agentic/runner.py
 sympy>=1.12        # scorer.py — equal_program (so khớp ký hiệu)
+tabulate           # agentic/llm.py
