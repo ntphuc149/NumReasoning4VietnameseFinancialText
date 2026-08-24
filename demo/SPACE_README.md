@@ -7,7 +7,7 @@ sdk: docker
 app_port: 7860
 pinned: false
 license: mit
-short_description: Hỏi đáp số liệu trên báo cáo tài chính tiếng Việt bằng hệ đa tác tử
+short_description: Hỏi đáp số liệu tài chính tiếng Việt bằng đa tác tử
 ---
 
 # Num Reasoning for Vietnamese Financial Text

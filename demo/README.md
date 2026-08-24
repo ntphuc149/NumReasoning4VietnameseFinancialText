@@ -34,24 +34,41 @@ và **n** — số kế hoạch lấy mẫu.
 ```
 Câu hỏi + tài liệu
    │
-   ├─ 1. Tách câu hỏi con        "giá PMI 2012 là bao nhiêu?" · chỉ tra số, không tính
-   ├─ 2. Trả lời câu hỏi con      mỗi câu một lời gọi, chạy song song
-   ├─ 3. Lập kế hoạch             lấy mẫu n kế hoạch tính toán khác nhau
-   └─ 4. Bỏ phiếu & thực thi      kế hoạch nào nhiều phiếu nhất thì chạy
+   ├─ 1. Lập kế hoạch          lấy mẫu n kế hoạch tính toán khác nhau, T = 0.6
+   └─ 2. Bỏ phiếu & thực thi   chuẩn hoá, gom cụm, cụm đông nhất thì đem chạy
    │
    └─▶  subtract(7.50, 6.75)  →  0.75
 ```
 
-Ý chính: **tách việc tìm số ra khỏi việc làm toán**, và **không tin một đường suy luận
-duy nhất** — lấy nhiều kế hoạch rồi cho chúng bỏ phiếu.
+Ý chính: **không tin một đường suy luận duy nhất** — lấy nhiều kế hoạch độc lập
+rồi cho chúng bỏ phiếu, thay vì giải mã tham lam một lần.
+
+## Khác paper ở đâu
 
 Đây là cài đặt của Nguyen, Ha, Le & Vu, *"A Graph-Based Agent Approach to Numerical
 Reasoning Question Answering"* (VLSP 2025) — hệ thắng Subtask 2 với EA 84.00%.
-`server.py` gọi thẳng `agentic/`, giữ nguyên tham số của paper: `n=15`, `T=0.6`,
-`top_p=0.95`, `top_k=20`, prompt tiếng Việt, bỏ phiếu canonical.
 
-> Hạ `n` xuống cho chạy nhanh thì đang bớt phần đa đường — thành cấu hình
-> *"Decomposition only"* trong bảng ablation, không còn là hệ đầy đủ.
+Paper có **4 node**. Bản demo này chạy **2**: hai node phân rã câu hỏi (§4.1 Subquery
+Generator, §4.2 Subquery Answerer) đã tắt qua `use_decomposition=False`. Chúng vẫn nằm
+trong đồ thị nhưng no-op — không gọi API, không hiện lên giao diện.
+
+Đó đúng là dòng **"Multi-path only"** trong bảng ablation của paper, và theo số liệu
+của chính họ thì phần bỏ đi rất rẻ:
+
+| Cấu hình | 8B EA / PA | 32B EA / PA |
+|---|---|---|
+| Đầy đủ 4 node | 78.47 / 71.83 | 81.29 / 75.25 |
+| **Multi-path only (bản demo này)** | **78.38 / 70.91** | **80.91 / 74.65** |
+| Decomposition only (n=1) | 72.84 / 62.58 | 79.48 / 66.80 |
+| Nhắc thẳng, không pipeline | 41.05 / 32.60 | 47.89 / 40.24 |
+
+Mất ~0,1–0,4 EA, đổi lại nhanh hơn nhiều lần. Bỏ đa đường mới là thứ đắt: mất 5,6 EA.
+
+Các tham số còn lại giữ nguyên của paper: `n=15`, `T=0.6`, `top_p=0.95`, `top_k=20`,
+prompt tiếng Việt, bỏ phiếu canonical. `server.py` gọi thẳng `agentic/`, không sửa dòng nào.
+
+> Hạ `n` xuống cho chạy nhanh là đang bớt nốt phần đa đường — thứ mang gần như
+> toàn bộ điểm số. Lúc đo đạc thì để `n = 15`.
 
 ## File
 
@@ -67,11 +84,23 @@ Thư mục này chạy độc lập được, không cần phần còn lại c�
 
 ## Đo thật
 
-| Model | n | Thời gian | Kết quả |
-|---|---|---|---|
-| gemma-4-31B-it | 3 | 2,7 s | `subtract(7.50, 6.75)` → `0.75` ✓ |
-| gpt-oss-120b | 3 | 5,9 s | `subtract(7.50, 6.75)` → `0.75` ✓ |
-| DeepSeek-V4-Flash | 3 | 28,5 s | `subtract(7.50, 6.75)` → `0.75` ✓ |
-| DeepSeek-V4-Flash | 15 | 55 s | `subtract(108.50, 100.00), divide(#0, 100.00)` → `0.085` ✓ |
+Cùng một câu hỏi, trước và sau khi tắt phân rã (DeepSeek-V4-Flash):
 
-Model reasoning chậm hơn nhiều vì chặng tách câu hỏi con phải nghĩ lâu.
+| | Thời gian | Lời gọi | Token |
+|---|---|---|---|
+| 4 node, n=5 | 73,5 s | 7 | 13.271 |
+| **2 node, n=5** | **12,2 s** | **2** | **4.787** |
+| 4 node, n=15 (PMI) | 55,0 s | 7 | 14.535 |
+| **2 node, n=15 (PMI)** | **4,8 s** | **2** | **5.744** |
+
+Đáp án không đổi trong cả bốn lượt.
+
+Ba model, cùng câu hỏi, n=5, đều ra `subtract(7.50, 6.75)` → `0.75` (khớp `exe_ans`):
+
+| Model | Thời gian |
+|---|---|
+| gemma-4-31B-it | ~2 s |
+| gpt-oss-120b | ~4 s |
+| DeepSeek-V4-Flash | 12,2 s |
+
+Model reasoning chậm hơn vì nghĩ lâu trước khi viết kế hoạch.

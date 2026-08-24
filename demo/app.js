@@ -220,15 +220,53 @@ $("#form-tbl").addEventListener("submit", e=>{
 let SHOWN = EXAMPLES;            // danh sách ví dụ đang hiển thị
 
 /** Rút ví dụ mới từ tập train qua backend. Không có backend thì giữ bản kèm sẵn. */
+let STATIC_EXAMPLES = null;      // examples.json đọc thẳng khi không có backend
+
+function setExSource(text){
+  const src = $("#ex-src");
+  if(src) src.textContent = text;
+}
+
+/** Cùng bộ lọc với `pick_examples` bên server, để hai đường cho ra thẻ giống nhau. */
+function sampleFrom(items, k){
+  const pool = items.filter(x =>
+    x.table && x.table.length >= 3 && x.table.length <= 9 &&
+    x.table[0] && x.table[0].length >= 2 && x.table[0].length <= 5 &&
+    x.query && x.query.length >= 10 && x.query.length <= 130);
+  const out = [];
+  while(out.length < k && pool.length){
+    out.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+  }
+  return out;
+}
+
 async function loadExamples(k){
+  k = k || 3;
+
+  // Có backend thì để nó bốc mẫu.
   try {
-    const res = await fetch("/api/examples?k=" + (k || 3), { cache:"no-store" });
-    if(!res.ok) return false;
-    const data = await res.json();
-    if(!data.items || !data.items.length) return false;
-    const src = $("#ex-src");
-    if(src) src.textContent = "Ví dụ rút từ " + data.source;
-    renderExamples(data.items);
+    const res = await fetch("/api/examples?k=" + k, { cache:"no-store" });
+    if(res.ok){
+      const data = await res.json();
+      if(data.items && data.items.length){
+        setExSource("Ví dụ rút từ " + data.source);
+        renderExamples(data.items);
+        return true;
+      }
+    }
+  } catch { /* không có backend — rơi xuống dưới */ }
+
+  // Không backend (Static Space): đọc thẳng examples.json nằm cạnh trang.
+  try {
+    if(!STATIC_EXAMPLES){
+      const res = await fetch("examples.json");
+      if(!res.ok) return false;
+      STATIC_EXAMPLES = await res.json();
+    }
+    const items = sampleFrom(STATIC_EXAMPLES.items || [], k);
+    if(!items.length) return false;
+    setExSource("Ví dụ rút từ " + (STATIC_EXAMPLES.source || "tập train ViNumQA"));
+    renderExamples(items);
     return true;
   } catch { return false; }
 }
@@ -299,11 +337,12 @@ function renderUserTurn(p){
 }
 
 /* ==================================================== khung hiển thị trace */
-const NODES = [
-  { n:"Tách câu hỏi con", sub:"Chỉ định vị số liệu — không so sánh, không tính toán. (§4.1)" },
-  { n:"Trả lời câu hỏi con", sub:"Mỗi câu hỏi con là một lời gọi độc lập, chạy song song. (§4.2)" },
-  { n:"Lập kế hoạch", sub:"Lấy mẫu n kế hoạch ở nhiệt độ 0.6 thay vì giải mã tham lam một đường. (§4.3)" },
-  { n:"Bỏ phiếu & thực thi", sub:"Chuẩn hoá, gom cụm, lấy cụm lớn nhất; hoà thì chọn kế hoạch ít bước hơn. (§4.4)" }
+/* Bản demo bỏ hai node phân rã (§4.1/§4.2) — cấu hình "Multi-path only".
+   Backend gửi danh sách chặng trong `run_start`, đây chỉ là bản dự phòng cho
+   chế độ mô phỏng. */
+const DEFAULT_STAGES = [
+  { key:"planner", n:"Lập kế hoạch", sub:"" },
+  { key:"equation_extractor", n:"Bỏ phiếu & thực thi", sub:"" }
 ];
 function toBottom(){ const t=$("#thread"); t.scrollTop = t.scrollHeight; }
 
@@ -311,12 +350,14 @@ class TraceView {
   constructor(userTurn){
     this.userTurn = userTurn;
     this.stages = [];
-    this.answerRows = [];
+    this.defs = DEFAULT_STAGES;
     this.plansBox = null;
+    this.reasoning = [];
+    this.paired = false;
     this.el = document.createElement("section");
     this.el.className = "turn-bot reveal";
     this.el.innerHTML = '<div class="run-head"><span class="dot busy"></span>'+
-      '<span class="t">Đang chạy đồ thị 4 tác tử…</span><span class="el">0,0 s</span></div>';
+      '<span class="t">Đang chạy…</span><span class="el">0,0 s</span></div>';
     $("#col").appendChild(this.el);
     this.t0 = performance.now();
     this.elp = this.el.querySelector(".el");
@@ -325,12 +366,20 @@ class TraceView {
     }, 100);
     toBottom();
   }
+  /** Chặng do backend quyết định — tắt node nào thì nó không có mặt ở đây. */
+  setStages(list){
+    if(list && list.length) this.defs = list.map(x=>({ key:x.key, n:x.name, sub:x.sub }));
+  }
+  idxOf(key){ return this.defs.findIndex(d => d.key === key); }
+
   stageStart(i){
+    const def = this.defs[i]; if(!def) return null;
     const s = document.createElement("div");
     s.className = "stage busy";
     s.innerHTML = '<div class="rail"><div class="pip">'+(i+1)+'</div></div>'+
-      '<div class="stage-body"><div class="stage-head"><h3>'+NODES[i].n+'</h3><span class="note"></span></div>'+
-      '<div class="stage-sub">'+NODES[i].sub+'</div><div class="out"></div></div>';
+      '<div class="stage-body"><div class="stage-head"><h3>'+esc(def.n)+'</h3><span class="note"></span></div>'+
+      (def.sub ? '<div class="stage-sub">'+esc(def.sub)+'</div>' : '')+
+      '<div class="out"></div></div>';
     this.el.appendChild(s);
     this.stages[i] = s;
     toBottom();
@@ -342,46 +391,23 @@ class TraceView {
     s.querySelector(".pip").innerHTML = '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>';
     if(note) s.querySelector(".note").textContent = note;
   }
-  out(i){ return this.stages[i].querySelector(".out"); }
+  out(i){ const s = this.stages[i]; return s ? s.querySelector(".out") : null; }
+  outFor(key){ return this.out(this.idxOf(key)); }
 
-  addSubquery(i, text){
-    const d = document.createElement("div");
-    d.className = "sq reveal";
-    d.innerHTML = '<span class="tagx">sq_'+(i+1)+'</span><span class="txt">'+esc(text)+'</span><span></span>';
-    this.out(0).appendChild(d); toBottom();
-  }
-  prepAnswers(questions){
-    const box = this.out(1);
-    this.answerRows = questions.map((text,i)=>{
-      const d = document.createElement("div");
-      d.className = "sq reveal";
-      d.innerHTML = '<span class="tagx">v_'+(i+1)+'</span><span class="txt">'+esc(text)+
-        '</span><span class="val wait">…</span>';
-      box.appendChild(d);
-      return d;
-    });
-    toBottom();
-  }
-  fillAnswer(i, short, full){
-    const row = this.answerRows[i]; if(!row) return;
-    const chip = row.querySelector(".val");
-    if(chip) chip.outerHTML = '<span class="val">'+esc(short||"—")+'</span>';
-    if(full) row.insertAdjacentHTML("beforeend", '<span class="from">'+esc(full)+'</span>');
-    toBottom();
-  }
   plannerPending(n){
-    this.out(2).innerHTML = '<div class="plans reveal"><div class="plan-stat">'+
+    const box = this.outFor("planner"); if(!box) return;
+    box.innerHTML = '<div class="plans reveal"><div class="plan-stat">'+
       '<span class="lbl">Đã lấy mẫu</span><b class="j-pc">0 / '+n+'</b>'+
       '<span class="lbl">Kế hoạch khác biệt</span><b class="j-pd">—</b></div>'+
-      '<div class="bar-indet j-bar"></div>'+
+      '<div class="vote-key j-load">Đang lấy mẫu ' + n + ' kế hoạch…</div>'+
       '<div class="votes j-vb" hidden></div>'+
-      '<div class="vote-key j-vk">Đang lấy mẫu…</div></div>';
-    this.plansBox = this.out(2).querySelector(".plans");
+      '<div class="vote-key j-vk" hidden></div></div>';
+    this.plansBox = box.querySelector(".plans");
   }
   plansSampled(sampled, n){
     if(!this.plansBox) return;
     $(".j-pc", this.plansBox).textContent = sampled + " / " + n;
-    const bar = $(".j-bar", this.plansBox); if(bar) bar.remove();
+    const load = $(".j-load", this.plansBox); if(load) load.remove();
     toBottom();
   }
   showVotes(votes, total){
@@ -396,11 +422,50 @@ class TraceView {
       sp.textContent = v;
       vb.appendChild(sp);
     });
+    const key = $(".j-vk", this.plansBox); if(key) key.hidden = false;
     const pct = total ? Math.round(votes[0]/total*100) : 0;
     $(".j-vk", this.plansBox).innerHTML = 'Cụm lớn nhất: <b class="mono">'+votes[0]+'/'+total+
       '</b> phiếu ('+pct+'%) — chọn làm phương trình cuối.';
     toBottom();
   }
+  setReasoning(items, paired){
+    this.reasoning = items || [];
+    this.paired = !!paired;
+  }
+
+  /** Bảng chi tiết n đường: suy nghĩ của model, kế hoạch, chương trình, kết quả. */
+  showCandidates(items, winner){
+    if(!items || !items.length || !this.plansBox) return;
+    const box = document.createElement("details");
+    box.className = "detail";
+    box.innerHTML = '<summary>' + caret() + 'Chi tiết ' + items.length +
+                    ' đường suy luận</summary>';
+    const body = document.createElement("div");
+    body.className = "detail-body";
+
+    items.forEach((c, i)=>{
+      const think = (this.paired && this.reasoning[i]) ? this.reasoning[i] : "";
+      const won = c.ok && c.program && c.program === winner;
+      const el = document.createElement("div");
+      el.className = "cand";
+      el.innerHTML =
+        '<div class="cand-head"><span class="tagx">#' + (i+1) + '</span>' +
+        (won ? '<span class="badge win">thắng</span>'
+             : (c.ok ? '' : '<span class="badge bad">loại</span>')) +
+        '<code>' + esc(c.program || c.error || "—") + '</code>' +
+        (c.ok && c.result ? '<span class="res">' + esc(c.result) + '</span>' : '') +
+        '</div>' +
+        (think ? '<div class="think"><span class="lbl">Suy nghĩ</span>' +
+                 esc(think) + '</div>' : '') +
+        (c.plan ? '<pre class="plan">' + esc(c.plan) + '</pre>' : '');
+      body.appendChild(el);
+    });
+
+    box.appendChild(body);
+    this.plansBox.appendChild(box);
+    toBottom();
+  }
+
   showHits(cells){
     if(!cells || !cells.length || !this.userTurn) return;
     cells.forEach(([r,c])=>{
@@ -428,7 +493,8 @@ class TraceView {
       h += '<div class="warn" style="margin-top:12px">Không có kế hoạch nào chạy được — '+
            'đã rơi về nhắc trực tiếp (<span class="mono">'+esc(f.fallback)+'</span>).</div>';
     }
-    this.out(3).innerHTML = h;
+    const box = this.outFor("equation_extractor");
+    if(box) box.innerHTML = h;
     toBottom();
   }
   finish(text){
@@ -483,21 +549,21 @@ async function runLive(view, payload){
     switch(ev.type){
       case "run_start":
         nSamples = ev.n_samples;
+        view.setStages(ev.stages);
         break;
       case "stage":
         if(ev.status === "start"){
           view.stageStart(ev.i);
-          if(ev.i === 2) view.plannerPending(nSamples);
+          if(ev.key === "planner") view.plannerPending(nSamples);
         } else {
           view.stageDone(ev.i, ev.note + (ev.seconds ? " · " + ev.seconds + "s" : ""));
         }
         break;
-      case "subqueries":
-        ev.items.forEach((t,i)=> view.addSubquery(i, t));
+      case "reasoning":
+        view.setReasoning(ev.items, ev.paired);
         break;
-      case "answers":
-        view.prepAnswers(ev.items.map(x=>x.q));
-        ev.items.forEach((x,i)=> view.fillAnswer(i, x.num || x.v, x.num ? x.v : ""));
+      case "candidates":
+        view.showCandidates(ev.items, ev.winner);
         break;
       case "hits":
         view.showHits(ev.cells);
@@ -542,37 +608,23 @@ async function runLive(view, payload){
 
 /* ==================================== chế độ mô phỏng (không có backend) = */
 async function runMock(view, payload, trace){
-  view.stageStart(0);
-  await wait(700);
-  for(let i=0;i<trace.subqueries.length;i++){
-    view.addSubquery(i, trace.subqueries[i].q);
-    await wait(170);
-  }
-  view.stageDone(0, "k = " + trace.subqueries.length);
+  const iPlan = view.idxOf("planner"), iEq = view.idxOf("equation_extractor");
 
-  view.stageStart(1);
-  view.prepAnswers(trace.subqueries.map(s=>s.q));
-  for(let i=0;i<trace.subqueries.length;i++){
-    await wait(320);
-    view.fillAnswer(i, trace.subqueries[i].v, trace.subqueries[i].from);
-  }
-  view.showHits(trace.hits);
-  view.stageDone(1, trace.subqueries.length + " lời gọi song song");
-
-  view.stageStart(2);
+  view.stageStart(iPlan);
   view.plannerPending(trace.plans);
   for(let i=1;i<=trace.plans;i++){
     view.plansSampled(i, trace.plans);
     await wait(REDUCED ? 0 : 50);
   }
   view.showVotes(trace.votes, trace.plans);
-  view.stageDone(2, "n = " + trace.plans + ", T = 0.6");
+  view.stageDone(iPlan, "n = " + trace.plans + ", T = 0.6");
 
-  view.stageStart(3);
+  view.stageStart(iEq);
   await wait(600);
+  view.showHits(trace.hits);
   view.showFinal(trace);
-  view.stageDone(3, "đồng thuận");
-  view.finish("Hoàn tất (mô phỏng) — 4 tác tử");
+  view.stageDone(iEq, "đồng thuận");
+  view.finish("Hoàn tất (mô phỏng)");
 }
 
 /* -- suy luận dự phòng cho đầu vào tự nhập khi không có backend --------- */
@@ -595,10 +647,6 @@ function fallbackTrace(payload){
   const score = x => (x.row.toLowerCase().split(/\s+/).filter(w=>w.length>3 && ql.includes(w)).length*2)
                    + (x.col.toLowerCase().split(/\s+/).filter(w=>w.length>2 && ql.includes(w)).length);
   const pick = cells.slice().sort((a,b)=>score(b)-score(a)).slice(0,3);
-  const subqueries = pick.length ? pick.map(x=>({
-    q: 'Giá trị của "'+x.row+'" ở cột "'+x.col+'" là bao nhiêu?',
-    v: x.raw, from: "bảng · hàng "+(x.r+1)+", cột "+(x.c+1)
-  })) : [{ q:"Câu hỏi cần những số liệu nào trong tài liệu?", v:"—", from:"chưa có bảng để tra" }];
 
   let steps, program, answer, unit = "";
   const wantsRatio = /tỷ lệ|phần trăm|%|tỷ trọng|tăng trưởng/.test(ql);
@@ -624,7 +672,7 @@ function fallbackTrace(payload){
   }
   const win = 9 + Math.floor(Math.random()*5), rest = 15 - win;
   const votes = rest > 3 ? [win, rest-2, 1, 1] : rest > 1 ? [win, rest-1, 1] : [win, rest].filter(v=>v>0);
-  return { subqueries, hits: pick.map(x=>[x.r,x.c]), plans:15, distinct:votes.length,
+  return { hits: pick.map(x=>[x.r,x.c]), plans:15, distinct:votes.length,
            votes, steps, program, answer, unit };
 }
 
@@ -682,7 +730,7 @@ $("#reset").addEventListener("click", ()=>{
   q.value=""; autosize(); syncSend(); renderSlips();
   $("#col").innerHTML = INITIAL_COL;
   renderExamples();
-  if(LIVE) loadExamples(3);
+  loadExamples(3);
   q.focus();
 });
 
@@ -740,6 +788,10 @@ $("#form-key").addEventListener("submit", e=>{
   syncKeyBtn(); syncSend();
 });
 
+/* Danh sách model bình thường do `/api/health` gửi về. Bản này để giao diện vẫn
+   có đủ lựa chọn khi không có backend (Static Space) — giữ khớp với `MODELS`
+   trong server.py. */
+const DEFAULT_MODELS = ["DeepSeek-V4-Flash", "gemma-4-31B-it", "gpt-oss-120b"];
 let MODEL_LIST = [];
 
 function fillModels(models, current){
@@ -778,7 +830,6 @@ async function probe(){
       chip.className = "chip on";
       chip.title = "Đang gọi mô hình thật";
       quiet();
-      loadExamples(3);
     } else {
       chip.className = "chip off";
       chip.title = "Máy chủ chạy nhưng chưa cấu hình được khoá";
@@ -788,10 +839,14 @@ async function probe(){
     LIVE = false; BYOK = false;
     chip.className = "chip off";
     chip.title = "Không thấy backend";
-    fillModels(MODEL_LIST.length ? MODEL_LIST : null, MODEL);
+    if(!MODEL_LIST.length) MODEL_LIST = DEFAULT_MODELS.slice();
+    if(CREDS.model && !MODEL_LIST.includes(CREDS.model)) MODEL_LIST.push(CREDS.model);
+    fillModels(MODEL_LIST, CREDS.model || MODEL);
     syncKeyBtn();
-    speak("mô phỏng", "Chưa có backend — chạy `python demo/server.py` để gọi thật");
+    speak("xem trước", "Bản xem trước giao diện — trace là mô phỏng, chưa gọi model thật");
   }
+  // Nạp ví dụ ở cả hai chế độ: có backend thì qua API, không thì đọc examples.json.
+  loadExamples(3);
 }
 
 loadCreds();

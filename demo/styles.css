@@ -190,11 +190,20 @@ table.fin td.hit{background:var(--figure-soft); color:var(--figure); font-weight
 /* ====================================================== assistant trace == */
 .turn-bot{display:flex; flex-direction:column}
 .run-head{display:flex; align-items:center; gap:9px; padding-bottom:14px}
-.run-head .dot{width:7px; height:7px; border-radius:50%; background:var(--accent); flex:none}
-.run-head .dot.busy{animation:pulse 1.3s ease-in-out infinite}
+/* Đang chạy thì chấm biến thành vòng xoay; xong thì thu lại thành chấm xanh. */
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.run-head .dot{
+  width:7px; height:7px; border-radius:50%; background:var(--accent); flex:none;
+  transition:width .15s, height .15s;
+}
+.run-head .dot.busy{
+  width:15px; height:15px; background:none;
+  border:2px solid var(--line-2); border-top-color:var(--ink);
+  animation:spin .7s linear infinite;
+}
 .run-head .dot.err{background:var(--danger)}
-@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.65)}}
-@media (prefers-reduced-motion:reduce){ .run-head .dot.busy{animation:none} }
+@media (prefers-reduced-motion:reduce){ .run-head .dot.busy{animation-duration:1.8s} }
 .run-head .t{font-size:14px; color:var(--ink-2)}
 .run-head .el{margin-left:auto; font-family:var(--mono); font-size:11.5px; color:var(--ink-3)}
 
@@ -208,14 +217,15 @@ table.fin td.hit{background:var(--figure-soft); color:var(--figure); font-weight
   display:grid; place-items:center; font-family:var(--mono); font-size:9px; color:var(--ink-3);
 }
 .stage.done .pip{border-color:var(--accent); background:var(--accent); color:#FFFFFF}
-.stage.busy .pip{border-color:var(--accent); color:var(--accent); animation:pulse 1.3s ease-in-out infinite}
-@media (prefers-reduced-motion:reduce){ .stage.busy .pip{animation:none} }
+/* Chặng đang chạy: tô màu tĩnh. Vòng xoay chỉ có một chỗ, ở dòng "Đang chạy". */
+.stage.busy .pip{border-color:var(--accent); color:var(--accent)}
 .stage-body{padding-bottom:24px; min-width:0}
 .stage:last-of-type .stage-body{padding-bottom:0}
 .stage-head{display:flex; align-items:baseline; gap:9px; flex-wrap:wrap}
 .stage-head h3{margin:0; font-size:15px; font-weight:600; letter-spacing:-.01em}
 .stage-head .note{font-size:12.5px; color:var(--ink-3); font-family:var(--mono)}
-.stage-sub{font-size:13px; color:var(--ink-3); margin:2px 0 11px}
+.stage-sub{font-size:13px; color:var(--ink-3); margin:2px 0 0}
+.stage-body>.out{margin-top:9px}
 .reveal{animation:rise .3s cubic-bezier(.2,.7,.3,1) both}
 @keyframes rise{from{opacity:0; transform:translateY(4px)}to{opacity:1; transform:none}}
 @media (prefers-reduced-motion:reduce){ .reveal{animation:none} }
@@ -251,6 +261,49 @@ table.fin td.hit{background:var(--figure-soft); color:var(--figure); font-weight
 }
 .votes span.win{background:var(--accent); color:#FFFFFF}
 .vote-key{font-size:12.5px; color:var(--ink-3)}
+
+/* ------------------------------- chi tiết n đường suy luận ------------- */
+.detail{margin-top:12px; border-top:1px solid var(--line); padding-top:10px}
+.detail>summary{
+  list-style:none; cursor:pointer; display:flex; align-items:center; gap:8px;
+  font-size:12.5px; color:var(--ink-2);
+}
+.detail>summary::-webkit-details-marker{display:none}
+.detail>summary:hover{color:var(--ink)}
+.detail>summary .caret{transition:transform .18s; color:var(--ink-3)}
+.detail[open]>summary .caret{transform:rotate(90deg)}
+.detail-body{display:flex; flex-direction:column; gap:9px; margin-top:11px}
+
+.cand{border:1px solid var(--line); border-radius:var(--r-tag); padding:10px 12px; background:var(--bg)}
+.cand-head{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+.cand-head code{
+  font-family:var(--mono); font-size:12px; color:var(--ink);
+  overflow-x:auto; white-space:nowrap; flex:1; min-width:0;
+}
+.cand-head .res{
+  font-family:var(--mono); font-size:12px; font-weight:500; color:var(--figure);
+  font-variant-numeric:tabular-nums;
+}
+.badge{
+  font-size:10.5px; font-weight:500; letter-spacing:.03em; padding:2px 7px;
+  border-radius:999px; white-space:nowrap;
+}
+.badge.win{background:var(--accent); color:#FFFFFF}
+.badge.bad{background:var(--bg-3); color:var(--ink-3)}
+
+.cand .think{
+  margin-top:9px; padding:9px 11px; border-radius:var(--r-tag);
+  background:var(--bg-2); color:var(--ink-2);
+  font-size:12.5px; line-height:1.6; white-space:pre-wrap; word-break:break-word;
+  max-height:200px; overflow-y:auto;
+}
+.cand .think .lbl{display:block; margin-bottom:5px}
+.cand .plan{
+  margin:9px 0 0; padding:9px 11px; border-radius:var(--r-tag);
+  background:var(--bg-2); border:none;
+  font-family:var(--mono); font-size:12px; line-height:1.55; color:var(--ink-2);
+  white-space:pre-wrap; word-break:break-word; overflow-x:auto;
+}
 .bar-indet{
   height:4px; border-radius:2px; background:var(--bg-3); overflow:hidden; margin-bottom:10px;
 }

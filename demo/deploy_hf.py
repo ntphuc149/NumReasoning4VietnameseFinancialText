@@ -28,7 +28,7 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-DEFAULT_REPO = "Hieu18012005/num-reasoning-vi-financial"
+DEFAULT_REPO = "duonghieu18012005/num-reasoning-vi-financial"
 
 # Đủ để Space chạy. Cố tình bỏ .env, preview.html, __pycache__.
 INCLUDE_FILES = [
@@ -39,8 +39,26 @@ INCLUDE_FILES = [
 INCLUDE_DIRS = ["agentic"]
 NEVER = {".env"}
 
+# Static Space: HF chỉ phục vụ file tĩnh, không chạy Python. Giao diện tự dò
+# thấy không có /api/health rồi chuyển sang chế độ xem trước; examples.json vẫn
+# được đọc thẳng nên thẻ ví dụ vẫn là dòng thật của tập train.
+STATIC_FILES = ["index.html", "styles.css", "app.js", "data.js", "examples.json"]
 
-def collect() -> list[tuple[Path, str]]:
+
+def static_readme() -> str:
+    """SPACE_README.md với YAML đổi sang sdk static."""
+    out = []
+    for line in (HERE / "SPACE_README.md").read_text(encoding="utf-8").splitlines():
+        if line.startswith("sdk:"):
+            out.append("sdk: static")
+        elif line.startswith("app_port:"):
+            continue                      # static không có cổng
+        else:
+            out.append(line)
+    return "\n".join(out) + "\n"
+
+
+def collect(static: bool = False) -> list[tuple[Path, str]]:
     """[(đường dẫn thật, đường dẫn trên Space)] — README lấy từ SPACE_README.md."""
     out: list[tuple[Path, str]] = []
 
@@ -48,6 +66,15 @@ def collect() -> list[tuple[Path, str]]:
     if not space_readme.exists():
         sys.exit("Thiếu SPACE_README.md — Hugging Face cần YAML đầu file này.")
     out.append((space_readme, "README.md"))
+
+    if static:
+        for name in STATIC_FILES:
+            path = HERE / name
+            if path.exists():
+                out.append((path, name))
+            else:
+                print(f"  bỏ qua (không có): {name}")
+        return out
 
     for name in INCLUDE_FILES:
         path = HERE / name
@@ -68,14 +95,32 @@ def collect() -> list[tuple[Path, str]]:
     return out
 
 
+def hf_token() -> str | None:
+    """HF_TOKEN từ biến môi trường, không có thì lấy trong `.env` ở gốc repo.
+
+    Trả None để `huggingface_hub` tự dùng token đã `huggingface-cli login`.
+    """
+    import os
+    if os.environ.get("HF_TOKEN"):
+        return os.environ["HF_TOKEN"]
+    env = HERE.parent / ".env"
+    if env.exists():
+        for line in env.read_text(encoding="utf-8").splitlines():
+            if line.strip().startswith("HF_TOKEN="):
+                return line.split("=", 1)[1].strip().strip('"').strip("'")
+    return None
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description="Đẩy demo lên Hugging Face Space")
     ap.add_argument("--repo", default=DEFAULT_REPO)
     ap.add_argument("--push", action="store_true", help="thật sự đẩy lên")
     ap.add_argument("--private", action="store_true")
+    ap.add_argument("--static", action="store_true",
+                    help="Static Space (miễn phí): chỉ giao diện, chế độ xem trước")
     args = ap.parse_args()
 
-    files = collect()
+    files = collect(static=args.static)
     total = sum(p.stat().st_size for p, _ in files)
     print(f"\n  Space   {args.repo}")
     print(f"  Tệp     {len(files)}  ({total / 1024:,.0f} KB)")
@@ -87,7 +132,7 @@ def main() -> None:
         return
 
     from huggingface_hub import HfApi
-    api = HfApi()
+    api = HfApi(token=hf_token())
 
     who = api.whoami()
     role = who.get("auth", {}).get("accessToken", {}).get("role")
@@ -96,18 +141,45 @@ def main() -> None:
                  "  https://huggingface.co/settings/tokens  ->  New token, role = Write\n"
                  "  rồi: huggingface-cli login\n")
 
-    api.create_repo(repo_id=args.repo, repo_type="space", space_sdk="docker",
-                    private=args.private, exist_ok=True)
+    sdk = "static" if args.static else "docker"
+
+    # Repo đã có thì không gọi create_repo: tài khoản free bị chặn 402 ở bước
+    # *tạo* Space docker, còn Space sẵn có vẫn đổi SDK được qua YAML trong
+    # README. Bỏ qua create ở đây chính là cách chuyển static -> docker.
+    try:
+        api.space_info(args.repo)
+        print(f"\n  Space đã có, chỉ cập nhật file (sdk -> {sdk} qua README).")
+    except Exception:
+        try:
+            api.create_repo(repo_id=args.repo, repo_type="space", space_sdk=sdk,
+                            private=args.private, exist_ok=True)
+        except Exception as exc:
+            # Tài khoản free bị chặn 402 ngay ở bước *tạo* Space docker, nhưng
+            # Space đã tồn tại thì đổi SDK qua YAML trong README lại được. Nên
+            # tạo dạng static trước rồi để README kéo nó sang docker.
+            if "402" not in str(exc) or sdk != "docker":
+                raise
+            print("  402 khi tạo Space docker — tạo dạng static rồi đổi qua README.")
+            api.create_repo(repo_id=args.repo, repo_type="space", space_sdk="static",
+                            private=args.private, exist_ok=True)
     print(f"\n  Space sẵn sàng: https://huggingface.co/spaces/{args.repo}")
 
     for path, dest in files:
-        api.upload_file(path_or_fileobj=str(path), path_in_repo=dest,
-                        repo_id=args.repo, repo_type="space")
+        if dest == "README.md" and args.static:
+            api.upload_file(path_or_fileobj=static_readme().encode("utf-8"),
+                            path_in_repo=dest, repo_id=args.repo, repo_type="space")
+        else:
+            api.upload_file(path_or_fileobj=str(path), path_in_repo=dest,
+                            repo_id=args.repo, repo_type="space")
         print(f"    đã đẩy  {dest}")
 
-    print("\n  Xong. Việc còn lại — Settings > Variables and secrets:")
-    print("    DEMO_BYOK = 1   (variable)")
-    print("  Thiếu biến này Space sẽ không khởi động được vì không có khoá nào.\n")
+    if args.static:
+        print("\n  Xong. Static Space không chạy Python nên giao diện ở chế độ")
+        print("  xem trước: trace là mô phỏng. Ví dụ vẫn là dòng thật của tập train.\n")
+    else:
+        print("\n  Xong. Việc còn lại — Settings > Variables and secrets:")
+        print("    DEMO_BYOK = 1   (variable)")
+        print("  Dockerfile đã đặt sẵn biến này, chỉ cần khi muốn đổi khác.\n")
 
 
 if __name__ == "__main__":

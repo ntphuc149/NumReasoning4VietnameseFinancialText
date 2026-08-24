@@ -76,7 +76,7 @@ sys.path.insert(0, str(HERE if (HERE / "agentic").is_dir() else AGENT_DIR))
 
 from agentic.agents import build_default_graph          # noqa: E402
 from agentic.config import AgentConfig                  # noqa: E402
-from agentic.llm import LLMClient                       # noqa: E402
+from agentic.llm import LLMClient, hidden_reasoning     # noqa: E402
 from agentic.runner import build_state                  # noqa: E402
 from agentic.scoring import execute_program             # noqa: E402
 
@@ -211,6 +211,11 @@ def make_config(model: str, n_samples: int) -> AgentConfig:
         top_k=20,                     # paper: 20
         prompt_lang="vi",             # phụ lục B.1/B.3/B.5... là tiếng Việt
         vote_mode="canonical",        # §4.4
+        # Bản demo bỏ hai node phân rã (§4.1/§4.2) — đúng dòng "Multi-path only"
+        # trong bảng ablation của paper. Generator return ngay, answerer thấy
+        # rỗng cũng return, planner bỏ hẳn khối câu hỏi con: không tốn lời gọi
+        # nào. Theo số của paper, bỏ phần này chỉ mất ~0,1-0,4 EA.
+        use_decomposition=False,
     )
 
 
@@ -254,24 +259,8 @@ def to_float(token: str):
         return None
 
 
-def last_number(text: str):
-    """Con số cuối câu — câu trả lời của tác tử thường có dạng "… là X"."""
-    found = [m for m in NUM_RE.findall(text or "")]
-    for token in reversed(found):
-        value = to_float(token)
-        if value is not None:
-            return token.rstrip(".,"), value
-    return None, None
-
-
-def find_hits(answers, table) -> list[list[int]]:
-    """Ô nào trong bảng mang đúng con số tác tử vừa tra ra — chỉ để tô sáng."""
-    wanted = []
-    for _, value in answers:
-        for token in NUM_RE.findall(value or ""):
-            f = to_float(token)
-            if f is not None:
-                wanted.append(f)
+def cells_matching(wanted, table) -> list[list[int]]:
+    """Toạ độ các ô có giá trị số trùng với một trong `wanted`."""
     hits: list[list[int]] = []
     for r, row in enumerate(table):
         if r == 0:
@@ -301,12 +290,73 @@ def split_steps(program: str, table_raw) -> list[dict]:
     return steps
 
 
-NODE_INDEX = {
-    "subquery_generator": 0,
-    "subquery_answerer": 1,
-    "planner": 2,
-    "equation_extractor": 3,
+# Node nào được hiện thành một chặng trên giao diện. Hai node phân rã đã tắt
+# nên không có mặt ở đây — chúng vẫn nằm trong đồ thị nhưng no-op.
+# (tên hiện trên giao diện, phụ đề). Phụ đề để rỗng thì giao diện không dựng
+# dòng đó — điền lại chuỗi vào đây là nó hiện lên như cũ.
+STAGES = {
+    "planner": ("Lập kế hoạch", ""),
+    "equation_extractor": ("Bỏ phiếu & thực thi", ""),
 }
+
+REF_RE = re.compile(r"#\d+")
+
+
+def program_hits(program: str, table) -> list[list[int]]:
+    """Ô nào trong bảng mang đúng con số mà chương trình thắng cuộc đã dùng.
+
+    Trước đây suy ra từ câu trả lời của các câu hỏi con; bỏ phân rã rồi thì lấy
+    thẳng từ literal trong chương trình — chính xác hơn, vì đó đúng là những số
+    đi vào phép tính.
+    """
+    body = REF_RE.sub(" ", program or "")
+    wanted = [v for v in (to_float(t) for t in NUM_RE.findall(body)) if v is not None]
+    return cells_matching(wanted, table)
+
+
+def capture_reasoning(client: LLMClient) -> list[str]:
+    """Giữ lại chuỗi suy nghĩ mà pipeline vốn vứt đi.
+
+    `agentic/llm.py::_content()` chỉ lấy `content`; phần suy nghĩ nằm ở
+    `reasoning_content` (DeepSeek, GLM) hoặc `reasoning` (gpt-oss) và bị bỏ —
+    đúng như nó nên làm, vì kế hoạch mới là thứ pipeline cần.
+
+    Bọc ngay lời gọi SDK của riêng client này thay vì sửa file vendored: nhờ
+    vậy `agentic/` giữ nguyên văn, và mỗi lượt chạy có sổ riêng nên hai người
+    hỏi cùng lúc không lẫn vào nhau. Model không phải loại reasoning thì danh
+    sách trả về rỗng.
+    """
+    traces: list[str] = []
+    inner = client.client.chat.completions.create
+
+    def create(*args, **kwargs):
+        response = inner(*args, **kwargs)
+        # Bỏ qua lệnh thăm dò server-side-n ("Say OK.", max_tokens=8): nó cũng
+        # sinh reasoning nhưng chẳng liên quan gì tới câu hỏi của người dùng.
+        if int(kwargs.get("max_tokens") or 0) > 16:
+            for choice in getattr(response, "choices", None) or []:
+                text = hidden_reasoning(getattr(choice, "message", None))
+                if text:
+                    traces.append(text.strip())
+        return response
+
+    client.client.chat.completions.create = create
+    return traces
+
+
+def candidate_rows(state) -> list[dict]:
+    """Từng đường suy luận: kế hoạch model viết ra, chương trình, kết quả."""
+    rows = []
+    for c in state.candidates:
+        rows.append({
+            "i": c.index,
+            "plan": (c.raw_plan or "").strip(),
+            "program": c.program or "",
+            "ok": bool(c.usable),
+            "result": "" if c.exe_result is None else str(c.exe_result),
+            "error": c.error or "",
+        })
+    return rows
 
 
 def run_pipeline(payload: dict, emit) -> None:
@@ -334,48 +384,56 @@ def run_pipeline(payload: dict, emit) -> None:
 
     config = make_config(model, n_samples)
     client = LLMClient(config, api_key=api_key, base_url=base_url)
+    reasoning = capture_reasoning(client)
     sample = to_sample(payload)
     state = build_state(sample, lang=config.prompt_lang)
 
-    emit({"type": "run_start", "model": model, "n_samples": n_samples,
-          "vote_mode": config.vote_mode, "prompt_lang": config.prompt_lang})
-
     graph = build_default_graph(client, config)
-    for node in graph.order():
-        i = NODE_INDEX[node.name]
-        emit({"type": "stage", "i": i, "status": "start"})
+    order = graph.order()
+    visible = [n.name for n in order if n.name in STAGES]
+    index_of = {name: i for i, name in enumerate(visible)}
+
+    emit({"type": "run_start", "model": model, "n_samples": n_samples,
+          "vote_mode": config.vote_mode, "prompt_lang": config.prompt_lang,
+          "decomposition": config.use_decomposition,
+          "stages": [{"key": k, "name": STAGES[k][0], "sub": STAGES[k][1]}
+                     for k in visible]})
+
+    for node in order:
+        key = node.name
+        i = index_of.get(key)
+
+        # Node đã tắt thì chạy im lặng — nó no-op, không gọi API, không hiện lên.
+        if i is None:
+            state = node.run(state)
+            continue
+
+        emit({"type": "stage", "i": i, "key": key, "status": "start"})
         state = node.run(state)
-        trace = state.traces[-1]
-        seconds = round(trace.seconds, 2)
+        seconds = round(state.traces[-1].seconds, 2)
 
-        if node.name == "subquery_generator":
-            emit({"type": "subqueries", "items": list(state.subqueries)})
-            emit({"type": "stage", "i": i, "status": "done", "seconds": seconds,
-                  "note": f"k = {len(state.subqueries)}"})
-
-        elif node.name == "subquery_answerer":
-            items = []
-            for q, a in state.subquery_answers:
-                token, _ = last_number(a)
-                items.append({"q": q, "v": a, "num": token or ""})
-            emit({"type": "answers", "items": items})
-            emit({"type": "hits", "cells": find_hits(state.subquery_answers,
-                                                     sample["table"])})
-            emit({"type": "stage", "i": i, "status": "done", "seconds": seconds,
-                  "note": f"{len(state.subquery_answers)} lời gọi song song"})
-
-        elif node.name == "planner":
+        if key == "planner":
             emit({"type": "plans", "sampled": len(state.raw_plans)})
-            emit({"type": "stage", "i": i, "status": "done", "seconds": seconds,
+            if reasoning:
+                # Ghép được với từng kế hoạch chỉ khi endpoint trả n lựa chọn
+                # trong một lần gọi — lúc đó thứ tự khớp. Nếu phải bắn n lệnh
+                # song song thì thứ tự về là thứ tự xong, không ghép bừa.
+                paired = (client.supports_server_side_n(model)
+                          and len(reasoning) == len(state.raw_plans))
+                emit({"type": "reasoning", "items": reasoning[:n_samples],
+                      "paired": paired})
+            emit({"type": "stage", "i": i, "key": key, "status": "done",
+                  "seconds": seconds,
                   "note": f"n = {n_samples}, T = {config.temperature}"})
 
-        elif node.name == "equation_extractor":
+        elif key == "equation_extractor":
             vote = state.vote
-            clusters = []
-            if vote is not None:
-                clusters = sorted((c.count for c in vote.clusters), reverse=True)
+            clusters = sorted((c.count for c in vote.clusters), reverse=True) if vote else []
             program = state.program or ""
             usable = state.usable_candidates
+            emit({"type": "hits", "cells": program_hits(program, sample["table"])})
+            emit({"type": "candidates", "items": candidate_rows(state),
+                  "winner": program})
             emit({
                 "type": "final",
                 "program": program,
@@ -389,7 +447,8 @@ def run_pipeline(payload: dict, emit) -> None:
                 "fallback": state.fallback,
                 "seconds": seconds,
             })
-            emit({"type": "stage", "i": i, "status": "done", "seconds": seconds,
+            emit({"type": "stage", "i": i, "key": key, "status": "done",
+                  "seconds": seconds,
                   "note": "đồng thuận" if not state.fallback else "dự phòng"})
 
     usage = client.usage.as_dict() if hasattr(client, "usage") else {}
@@ -445,6 +504,12 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def end_headers(self) -> None:
+        # File tĩnh không cache: sửa CSS/JS xong chỉ cần F5, khỏi Ctrl+F5.
+        if not self.path.startswith("/api/"):
+            self.send_header("Cache-Control", "no-store")
+        super().end_headers()
 
     def json_out(self, obj) -> None:
         body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
