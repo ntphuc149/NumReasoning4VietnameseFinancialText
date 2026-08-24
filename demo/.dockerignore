@@ -1,0 +1,7 @@
+.env
+__pycache__/
+*/__pycache__/
+*.pyc
+preview.html
+deploy_hf.py
+SPACE_README.md

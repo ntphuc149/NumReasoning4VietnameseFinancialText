@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MPR-Agent Workbench</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <svg class="mark" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="2.5" y="3.5" width="19" height="17" rx="1.5" stroke="currentColor" stroke-width="1.3"/>
+      <path d="M2.5 8.5h19M9 8.5V20.5M2.5 14.5h19" stroke="currentColor" stroke-width="1.3"/>
+      <circle cx="15.2" cy="11.4" r="1.5" fill="currentColor"/>
+      <circle cx="18.4" cy="17.4" r="1.5" fill="currentColor"/>
+    </svg>
+    <span>Suy luận số liệu trên báo cáo tài chính tiếng Việt</span>
+  </div>
+  <div class="top-right">
+    <div class="chip off" id="status" title="Trạng thái kết nối"><span class="led"></span><span id="status-t">đang dò…</span></div>
+    <select class="chip" id="model-select" aria-label="Chọn mô hình"></select>
+    <select class="chip" id="n-select" aria-label="Số kế hoạch lấy mẫu">
+      <option value="15">n = 15 (paper)</option>
+      <option value="8">n = 8</option>
+      <option value="5" selected>n = 5</option>
+      <option value="3">n = 3 (nhanh)</option>
+    </select>
+    <button class="chip" id="key-btn" hidden>Khoá API</button>
+    <button class="icon-btn" id="reset" title="Cuộc trò chuyện mới" aria-label="Cuộc trò chuyện mới">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+    </button>
+  </div>
+</header>
+
+<main class="thread" id="thread">
+  <div class="col" id="col">
+
+    <section class="hello" id="hello">
+      <h1>Num Reasoning for Vietnamese Financial Text</h1>
+      <div class="steps">
+        <div><i>1</i> Ngữ cảnh</div>
+        <div><i>2</i> Bảng dữ liệu</div>
+        <div><i>3</i> Câu hỏi</div>
+      </div>
+    </section>
+
+    <section id="examples">
+      <div class="ex-head"><span class="lbl" id="ex-src">Ví dụ từ tập ViNumQA</span><button class="btn sm ghost" type="button" id="ex-more">Ví dụ khác</button></div>
+      <div class="ex-grid" id="ex-grid"></div>
+    </section>
+
+  </div>
+</main>
+
+<div class="dock">
+  <div class="dock-col">
+    <div class="tray">
+      <div class="slips" id="slips"></div>
+      <div class="inrow">
+        <div class="pop-anchor">
+          <button class="plus" id="plus" aria-expanded="false" aria-haspopup="menu" aria-label="Thêm phần đầu vào">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
+          <div class="pop" id="pop" role="menu" hidden>
+            <div class="pop-t lbl">Đầu vào</div>
+            <button role="menuitem" data-open="ctx">
+              <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 6h16M4 11h16M4 16h10"/></svg></span>
+              <strong>Ngữ cảnh</strong>
+              <span class="st" id="st-ctx"></span>
+              <small>Đoạn văn trước và sau bảng trong báo cáo</small>
+            </button>
+            <button role="menuitem" data-open="tbl">
+              <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3.5" y="4.5" width="17" height="15" rx="1"/><path d="M3.5 9.5h17M9.5 9.5v10"/></svg></span>
+              <strong>Bảng dữ liệu</strong>
+              <span class="st" id="st-tbl"></span>
+              <small>Nhập từng ô hoặc dán thẳng từ Excel</small>
+            </button>
+            <hr>
+            <button role="menuitem" id="clear-all">
+              <span class="ic"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M5 7h14M10 7V5h4v2M8 7l1 12h6l1-12"/></svg></span>
+              <strong>Xoá đính kèm</strong>
+            </button>
+          </div>
+        </div>
+        <textarea id="query" rows="1" placeholder="Nhập câu hỏi về số liệu…" aria-label="Câu hỏi"></textarea>
+        <button class="send" id="send" disabled aria-label="Gửi">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
+        </button>
+      </div>
+      <div class="tray-foot" id="tray-foot" hidden>
+        <span id="mode-note"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================= khoá API -->
+<dialog id="dlg-key">
+  <form method="dialog" class="sheet" id="form-key">
+    <div class="sheet-head">
+      <div>
+        <h2>Khoá API</h2>
+        <p>Bản demo này không kèm khoá. Dùng khoá của bạn ở một endpoint tương thích OpenAI.</p>
+      </div>
+      <button class="x" value="cancel" type="submit" aria-label="Đóng">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="sheet-body">
+      <div class="warn">Khoá chỉ nằm trong trình duyệt của bạn và được gửi kèm mỗi lượt hỏi để máy chủ gọi hộ. Máy chủ không ghi log, không lưu lại.</div>
+      <div class="field">
+        <label class="lbl" for="key-url">Base URL</label>
+        <input class="box mono" id="key-url" type="url" spellcheck="false" placeholder="https://mkp-api.fptcloud.com/v1">
+        <span class="hint">Phải là <code>https</code>. Thường kết thúc bằng <code>/v1</code>.</span>
+      </div>
+      <div class="field">
+        <label class="lbl" for="key-val">API key</label>
+        <input class="box mono" id="key-val" type="password" spellcheck="false" autocomplete="off" placeholder="sk-…">
+      </div>
+      <div class="field">
+        <label class="lbl" for="key-model">Tên model <span style="text-transform:none; letter-spacing:0">(tuỳ chọn)</span></label>
+        <input class="box mono" id="key-model" spellcheck="false" placeholder="để trống nếu dùng các model có sẵn trong danh sách">
+        <span class="hint">Điền nếu endpoint của bạn đặt tên khác — tên này sẽ được thêm vào ô chọn model.</span>
+      </div>
+    </div>
+    <div class="sheet-foot">
+      <span class="count" id="key-msg"></span>
+      <button class="btn" type="button" id="key-clear">Xoá khoá</button>
+      <button class="btn" value="cancel" type="submit">Huỷ</button>
+      <button class="btn pri" value="save" type="submit">Lưu</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ============================================================ ngữ cảnh -->
+<dialog id="dlg-ctx">
+  <form method="dialog" class="sheet" id="form-ctx">
+    <div class="sheet-head">
+      <div>
+        <h2>Ngữ cảnh</h2>
+        <p>Phần văn bản bao quanh bảng. Tác tử tra số sẽ đọc cả hai đoạn.</p>
+      </div>
+      <button class="x" value="cancel" type="submit" aria-label="Đóng">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="sheet-body">
+      <div class="field">
+        <label class="lbl" for="pre">Văn bản trước bảng</label>
+        <textarea class="box" id="pre" rows="5" placeholder="biểu đồ dưới đây so sánh tổng lợi nhuận tích lũy của cổ đông…"></textarea>
+      </div>
+      <div class="field">
+        <label class="lbl" for="post">Văn bản sau bảng <span style="text-transform:none; letter-spacing:0">(tuỳ chọn)</span></label>
+        <textarea class="box" id="post" rows="4" placeholder="(1) nhóm công ty cùng ngành được trình bày trong biểu đồ này…"></textarea>
+      </div>
+    </div>
+    <div class="sheet-foot">
+      <span class="count" id="ctx-count">0 ký tự</span>
+      <button class="btn" value="cancel" type="submit">Huỷ</button>
+      <button class="btn pri" value="save" type="submit">Lưu ngữ cảnh</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ============================================================== bảng -->
+<dialog id="dlg-tbl">
+  <form method="dialog" class="sheet" id="form-tbl">
+    <div class="sheet-head">
+      <div>
+        <h2>Bảng dữ liệu</h2>
+        <p>Hàng đầu tiên là tiêu đề cột. Dán thẳng từ Excel, hoặc dán bảng Markdown — tự trải vào lưới.</p>
+      </div>
+      <button class="x" value="cancel" type="submit" aria-label="Đóng">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="sheet-body">
+      <div class="grid-tools">
+        <button class="btn sm" type="button" id="add-row">+ Hàng</button>
+        <button class="btn sm" type="button" id="add-col">+ Cột</button>
+        <button class="btn sm ghost" type="button" id="toggle-paste">Dán từ văn bản</button>
+        <span class="size" id="tbl-size">0 × 0</span>
+      </div>
+      <div class="field paste-zone" id="paste-zone" hidden>
+        <label class="lbl" for="paste-in">Dán bảng Markdown, TSV hoặc CSV</label>
+        <textarea class="box mono" id="paste-in" rows="5" style="font-size:12px" placeholder="| ngày | pmi | chỉ số s&amp;p 500 |&#10;|---|---|---|&#10;| 2012 | $ 100.00 | $ 100.00 |&#10;| 2013 | $ 108.50 | $ 132.40 |"></textarea>
+        <span class="hint">Tự nhận dạng: có dấu <code>|</code> thì đọc Markdown (bỏ qua dòng <code>|---|</code>), có tab thì TSV, còn lại CSV.</span>
+        <div style="display:flex; gap:10px; align-items:center">
+          <button class="btn sm" type="button" id="do-paste">Trải vào lưới</button>
+          <span class="hint" id="paste-msg" style="margin:0; color:var(--danger)"></span>
+        </div>
+      </div>
+      <div class="grid-scroll"><table class="editor" id="editor"></table></div>
+    </div>
+    <div class="sheet-foot">
+      <span class="count" id="tbl-count">0 ô có dữ liệu</span>
+      <button class="btn" value="cancel" type="submit">Huỷ</button>
+      <button class="btn pri" value="save" type="submit">Lưu bảng</button>
+    </div>
+  </form>
+</dialog>
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -170,3 +170,38 @@ Full Table 3 GRPO row, all three models (`img/sft-combined.png`), re-scored with
 Phúc, Hiếu, and Chi started scoping and designing the multi-agent stage (Sprint 3), reading Nguyen et al. (VNPT AI), "A Graph-Based Agent Approach to Numerical Reasoning Question Answering" (`papers/A Graph-Based Agent Approach to Numerical Reasoning Question.pdf`) — the VLSP 2025 Numerical Reasoning QA competition's top-performing system — as a design reference for our own multi-agent approach to this task. Implementation not started yet; still in the reading/design phase.
 
 Also drafted an outline for the final write-up, framed as a research paper using the ACL LaTeX template (rather than a plain project report), matching the venue style of the papers already reviewed for related work (FinQA, VLSP 2025 NumQA, PCPO).
+
+## 18/8/2026
+
+The team moved from design into implementation on the multi-agent stage. Work done:
+
+- Built a shared backend layer (`agentic/backends.py`) so the MPR-Agent pipeline can run against any of the project's 11 baseline models, not just `gemma-4-31B-it` over the API as before — each model is routed to either the API client or a local GPU backend depending on where it actually runs.
+- Fixed two bugs found while getting the first end-to-end runs working: reasoning models (DeepSeek-V4-Flash, GLM-5.2) were running out of their token budget on hidden reasoning before ever writing an answer (fixed with a 2048-token floor that auto-doubles if a response comes back empty); and the model frequently copied the paper's own worked example verbatim instead of substituting the question's real numbers (affected ~4% of candidates in a smoke test).
+- Ran a controlled ablation on DeepSeek-V4-Flash (full 497-sample test set): removing the subquery-decomposition step (`use_decomposition=False`) scored higher than the paper's full pipeline (PA 0.7787 vs 0.7505 EA), so this became the team's default configuration going forward.
+- Opened and merged the pipeline into `main` via PR.
+- First attempt to run `qwen3-4b-thinking` locally on a Kaggle T4 GPU ran out of memory immediately; added a retry that automatically shrinks the batch size on failure (15→7→3→1) instead of assuming one fixed size is always safe.
+- Tried moving the run to Modal (A100 GPU) for more speed, but the container doesn't keep state between sessions — a long run died partway through and all progress was lost. Ran out of Modal budget and decided to continue on Kaggle only.
+- Added a dual-GPU mode for Kaggle's two-T4 option, with a safety flag so the notebook can't be run in a way that only uses one of the two GPUs by mistake.
+
+## 19/8/2026
+
+Running the pipeline for real on Kaggle surfaced three more bugs, all fixed and verified against real logs before pushing to `chi`:
+
+- The dual-GPU setup was ignoring the sample-limit setting meant for quick test runs, so a "run only 5 samples" test was silently still processing the full 497.
+- The model was loading in a numeric precision (`bfloat16`) that Kaggle's T4 GPU has no hardware support for, which made every run far slower than it should be. Fixed to detect the GPU and choose a supported precision automatically.
+- A GPU memory leak: the code only freed memory after an error, never after a successful step, so memory usage climbed over a long run until it eventually crashed with an out-of-memory error. Fixed to free memory after every step.
+
+## 20/8/2026
+
+Even with the above fixes, the pipeline was still far too slow to finish a 497-sample run in any reasonable time — under an hour, it hadn't even completed one sample. To rule out a remaining bug, the team measured raw text-generation speed directly (13.65 tokens/second) and confirmed this is a genuine hardware limit of the Kaggle T4, not something fixable in code.
+
+Reviewed a teammate's separate notebook for a different model (Gemma3-4B, using a different loading technique — Unsloth in 4-bit precision — that finishes a full run in about 10 hours) and adapted the same technique for `qwen3-4b-thinking`, rewriting `mpr-agent-qwen3-4b-thinking-kaggle.ipynb`. Also built a second notebook, `mpr-agent-qwen3-4b-kaggle.ipynb`, for the plain (non-"thinking") version of Qwen3-4B, which is naturally faster since it doesn't spend extra time reasoning before each answer. Both notebooks are pushed to `chi`; neither has finished a full run on real hardware yet.
+
+Put together this week's status report for the team: a comparison of SFT vs SFT+GRPO results, and the Multi-Agent method with results collected so far.
+
+
+## 24/8/2026
+
+Phúc, Hiếu, and Chi building the demo and writing the report.
+
+Built `demo/` — a chat interface for the multi-agent pipeline, taking the same three inputs as a ViNumQA row (context, table, question) and showing the four agent stages through to the final program and answer. It calls `agentic/` directly rather than reimplementing anything, and runs live on FPT Cloud's API models. Continued the write-up in `main.tex` (ACL template).
