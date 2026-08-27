@@ -1,0 +1,34 @@
+[project]
+name = "stanr"
+version = "0.1.0"
+description = "Self-Taught Numerical Reasoning (STaNR): CoNR reasoning-trace distillation and iterative self-teaching fine-tuning for Vietnamese financial numerical reasoning."
+requires-python = ">=3.10"
+dependencies = [
+    "openai>=1.0",
+    "python-dotenv",
+    "tabulate",
+    "sympy",
+    "tqdm",
+    "pyyaml",
+]
+
+[project.optional-dependencies]
+train = [
+    "unsloth",
+    "torch",
+    "trl==0.22.2",
+    "peft",
+    "datasets",
+    "accelerate",
+    "bitsandbytes",
+]
+dev = [
+    "pytest",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["stanr*"]
